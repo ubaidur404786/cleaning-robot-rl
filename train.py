@@ -118,15 +118,15 @@ def train(num_episodes=5000, render_every=1000, save_path="models/q_table.pkl"):
     # Also create a rendered environment for occasional visualization
     env_visual = CleaningEnv(render_mode="human") if render_every > 0 else None
     
-    # Create Q-Learning agent with optimized hyperparameters for pure RL
+    # Create Q-Learning agent with optimized hyperparameters for 2300-state space
     agent = QLearningAgent(
-        state_size=env.observation_space.n,    # 230 states (position × dirt × direction)
+        state_size=env.observation_space.n,    # 2300 states (pos × dirt × dir × DNUT)
         action_size=env.action_space.n,        # 6 actions
-        learning_rate=0.1,                     # α = 0.1 (stable learning)
+        learning_rate=0.15,                    # α = 0.15 (slightly faster for larger space)
         discount_factor=0.99,                  # γ = 0.99 (strongly value future rewards)
         epsilon_start=1.0,                     # Start with 100% exploration
         epsilon_end=0.02,                      # End with 2% exploration
-        epsilon_decay=0.9997                   # Very slow decay for thorough exploration
+        epsilon_decay=0.998                    # Faster decay → ε ≈ 0.002 at ep 3000
     )
     
     # ==========================================================================
@@ -319,6 +319,14 @@ def train(num_episodes=5000, render_every=1000, save_path="models/q_table.pkl"):
         env_visual.close()
     
     print("\n" + "=" * 70)
+    
+    training_results = {
+        "rewards": episode_rewards,
+        "tiles_cleaned": episode_tiles_cleaned,
+        "steps_per_episode": episode_steps,
+        "epsilon_history": epsilon_history,
+        "success_history": success_history,
+    }
     
     return training_results
 
