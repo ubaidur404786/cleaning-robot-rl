@@ -71,8 +71,10 @@ the DQN works with a richer feature vector extracted from the environment:
   [0]     : robot_row  (normalised to 0-1)
   [1]     : robot_col  (normalised to 0-1)
   [2:25]  : dirt status of each of the 23 cleanable tiles (0 or 1)
+    [25:30] : one-hot movement history (came_from direction)
+    [30:40] : one-hot DNUT direction to nearest dirty tile
 
-Total input size = 25
+Total input size = 40
 
 The feature extraction is handled externally (in main.py) via the helper
 function _env_to_features(env), keeping this agent class decoupled from
@@ -100,7 +102,7 @@ class QNetwork(nn.Module):
     Feed-forward neural network for Q-value approximation.
 
     Architecture:
-      Input(25) → Linear(64) → ReLU → Linear(64) → ReLU → Linear(6)
+    Input(40) → Linear(64) → ReLU → Linear(64) → ReLU → Linear(6)
 
     The network takes a state feature vector and outputs one Q-value per
     action, just like a row in the tabular Q-table.
@@ -110,7 +112,7 @@ class QNetwork(nn.Module):
         """
         Parameters
         ----------
-        input_size  : int   Size of the state feature vector (default 25).
+        input_size  : int   Size of the state feature vector (default 40).
         output_size : int   Number of actions (default 6).
         hidden_size : int   Neurons per hidden layer (default 64).
         """
@@ -152,7 +154,7 @@ class DQNAgent:
 
     def __init__(
         self,
-        input_size=25,
+        input_size=40,
         action_size=6,
         learning_rate=0.001,
         discount_factor=0.99,
@@ -170,7 +172,7 @@ class DQNAgent:
 
         Parameters
         ----------
-        input_size      : int     Dimension of the feature vector (25).
+        input_size      : int     Dimension of the feature vector (40).
         action_size     : int     Number of possible actions (6).
         learning_rate   : float   Adam optimiser learning rate.
         discount_factor : float   Gamma (γ) — importance of future rewards.
@@ -273,7 +275,7 @@ class DQNAgent:
     # ACTION SELECTION
     # ==========================================================================
 
-    def choose_action(self, state_features, training=True):
+    def choose_action(self, state_features, training=True, eval_epsilon=0.02):
         """
         Choose an action using epsilon-greedy over the policy network.
 
@@ -283,14 +285,17 @@ class DQNAgent:
             Feature vector describing the current state.
         training : bool
             If True, use current epsilon for exploration.
-            If False, use a small fixed epsilon (0.02).
+            If False, use the provided evaluation epsilon.
+        eval_epsilon : float
+            Exploration rate to use during evaluation/testing.
+            Set to 0.0 for a fully deterministic greedy rollout.
 
         Returns
         -------
         int
             Chosen action index (0 to action_size-1).
         """
-        eps = self.epsilon if training else 0.02
+        eps = self.epsilon if training else eval_epsilon
 
         # Exploration: random action
         if random.random() < eps:

@@ -36,6 +36,7 @@ FEATURES
 """
 
 import os
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import sys
 import time
 import pickle
@@ -83,9 +84,13 @@ DEFAULT_EPS_DECAY     = 0.998
 
 # --- DQN-specific defaults ---------------------------------------------------
 DQN_LEARNING_RATE    = 0.001
-DQN_EPS_DECAY        = 0.9987    # reaches eps_end ≈ 0.02 in ~3000 episodes
-DQN_DEFAULT_EPISODES = 3000
-DQN_INPUT_SIZE       = 25        # 2 (position) + 23 (dirt flags)
+DQN_EPS_DECAY        = 0.9984    # reaches eps_end ≈ 0.02 in ~5000 episodes
+DQN_DEFAULT_EPISODES = 5000
+DQN_BATCH_SIZE       = 64
+DQN_MEMORY_SIZE      = 50000
+DQN_TARGET_UPDATE    = 250
+DQN_TRAIN_EVERY      = 1
+DQN_INPUT_SIZE       = 40        # 2 position + 23 dirt + 5 history + 10 DNUT
 
 # --- File paths ---------------------------------------------------------------
 QL_MODEL_PATH      = os.path.join(MODELS_DIR, "q_table.pkl")
@@ -186,10 +191,12 @@ def _env_to_features(env):
     """
     Extract a feature vector from the current environment state for DQN.
 
-    Feature vector (25 elements):
+        Feature vector (40 elements):
       [0]     : robot_row  (normalised 0-1)
       [1]     : robot_col  (normalised 0-1)
       [2:25]  : dirt status of each of the 23 cleanable tiles (0.0 or 1.0)
+            [25:30] : one-hot encoded movement history (came_from direction)
+            [30:40] : one-hot encoded DNUT direction to nearest dirty tile
 
     Parameters
     ----------
@@ -198,13 +205,22 @@ def _env_to_features(env):
 
     Returns
     -------
-    numpy.ndarray, shape (25,), dtype float32
+    numpy.ndarray, shape (40,), dtype float32
     """
-    features = np.zeros(2 + env.num_cleanable, dtype=np.float32)
+    features = np.zeros(DQN_INPUT_SIZE, dtype=np.float32)
     features[0] = env.robot_row / max(GRID_HEIGHT - 1, 1)
     features[1] = env.robot_col / max(GRID_WIDTH - 1, 1)
+
     for i, (row, col) in enumerate(env.cleanable_tiles):
         features[2 + i] = 1.0 if env.dirt_map[row][col] == 1 else 0.0
+
+    # Movement history: 5 bins (N, S, E, W, none)
+    features[25 + int(env.last_direction)] = 1.0
+
+    # Direction to nearest dirty tile: 10 bins (3x3 relative direction + none)
+    dnut_direction = int(env._get_nearest_dirty_direction())
+    features[30 + dnut_direction] = 1.0
+
     return features
 
 
@@ -268,9 +284,10 @@ def _make_agent(algo, env):
             epsilon_start=DEFAULT_EPS_START,
             epsilon_end=DEFAULT_EPS_END,
             epsilon_decay=DQN_EPS_DECAY,
-            batch_size=64,
-            memory_size=10000,
-            target_update=100,
+            batch_size=DQN_BATCH_SIZE,
+            memory_size=DQN_MEMORY_SIZE,
+            target_update=DQN_TARGET_UPDATE,
+            train_every=DQN_TRAIN_EVERY,
         )
 
     cls = QLearningAgent if algo == "qlearning" else SarsaAgent
@@ -568,7 +585,7 @@ def test_agent_ui(algo="qlearning", num_episodes=10, speed="normal"):
 # ############################################################################
 
 def extract_optimal_path(algo="qlearning"):
-    """Run one greedy episode and return the list of (row, col) positions."""
+    """Run one deterministic greedy episode and return the visited path."""
     model_path = _algo_model_path(algo)
     if not os.path.exists(model_path):
         print(f"  Model not found: {model_path}")
@@ -586,9 +603,9 @@ def extract_optimal_path(algo="qlearning"):
     while not done:
         if algo == "dqn":
             features = _env_to_features(env)
-            action = agent.choose_action(features, training=False)
+            action = agent.choose_action(features, training=False, eval_epsilon=0.0)
         else:
-            action = agent.choose_action(state, training=False)
+            action = agent.choose_action(state, training=False, eval_epsilon=0.0)
         actions_taken.append(action)
         next_state, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated

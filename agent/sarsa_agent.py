@@ -232,7 +232,7 @@ class SarsaAgent:
     # ACTION SELECTION (identical to Q-Learning for fair comparison)
     # ==========================================================================
     
-    def choose_action(self, state, training=True):
+    def choose_action(self, state, training=True, eval_epsilon=0.02):
         """
         Choose an action using epsilon-greedy.
         
@@ -247,7 +247,11 @@ class SarsaAgent:
         
         training : bool
             If True, use epsilon-greedy with current epsilon.
-            If False, use epsilon-greedy with small fixed epsilon.
+            If False, use epsilon-greedy with configurable evaluation epsilon.
+
+        eval_epsilon : float
+            Exploration rate to use during evaluation/testing.
+            Set to 0.0 for deterministic greedy behavior.
         
         Returns:
         --------
@@ -270,7 +274,7 @@ class SarsaAgent:
         # ==================================================================
         # TESTING: Epsilon-greedy with small fixed epsilon
         # ==================================================================
-        test_epsilon = 0.02
+        test_epsilon = eval_epsilon
         
         if np.random.random() < test_epsilon:
             return np.random.randint(0, self.action_size)

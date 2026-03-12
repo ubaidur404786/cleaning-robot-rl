@@ -234,7 +234,7 @@ class QLearningAgent:
             )
         return self.q_table[state]
     
-    def choose_action(self, state, training=True):
+    def choose_action(self, state, training=True, eval_epsilon=0.02):
         """
         Choose an action using epsilon-greedy (training) or softmax (testing).
         
@@ -255,7 +255,11 @@ class QLearningAgent:
         
         training : bool
             If True, use epsilon-greedy (for training)
-            If False, use epsilon-greedy with small fixed epsilon (for testing)
+            If False, use epsilon-greedy with configurable evaluation epsilon
+
+        eval_epsilon : float
+            Exploration rate to use during evaluation/testing.
+            Set to 0.0 for deterministic greedy behavior.
         
         Returns:
         --------
@@ -284,7 +288,7 @@ class QLearningAgent:
         # Use the same strategy as training but with a tiny exploration rate.
         # This keeps behaviour consistent with how the agent learned and
         # prevents deterministic loops on rarely-visited states.
-        test_epsilon = 0.02  # 2% random to break potential loops
+        test_epsilon = eval_epsilon
         
         if np.random.random() < test_epsilon:
             return np.random.randint(0, self.action_size)
