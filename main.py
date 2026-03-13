@@ -29,7 +29,8 @@ FEATURES
 
  --- COMPARISON ---
  [10] Compare All Algorithms (Dashboard)
- [11] Quick Train & Compare All
+ [11] Train All (Shared Episodes) + Auto Test + Compare
+ [12] Train One Then Test Immediately
  [0]  Exit
 
 ================================================================================
@@ -50,7 +51,8 @@ from datetime import datetime
 try:
     from env.cleaning_env import (
         CleaningEnv, GRID_WIDTH, GRID_HEIGHT,
-        EMPTY, KITCHEN, LIVING_ROOM, HALLWAY
+        EMPTY, KITCHEN, LIVING_ROOM, HALLWAY, BEDROOM, DINING, BATHROOM, GARAGE, LAUNDRY, OFFICE, CHARGER,
+        CHARGER_ROW, CHARGER_COL, DIRTY
     )
     from agent.q_learning_agent import QLearningAgent
     from agent.sarsa_agent import SarsaAgent
@@ -75,7 +77,7 @@ MODELS_DIR = "models"
 PLOTS_DIR  = "plots"
 
 # --- Shared hyper-parameters (tabular agents) --------------------------------
-DEFAULT_EPISODES      = 5000
+DEFAULT_EPISODES      = 10000
 DEFAULT_LEARNING_RATE = 0.15
 DEFAULT_DISCOUNT      = 0.99
 DEFAULT_EPS_START     = 1.0
@@ -84,13 +86,13 @@ DEFAULT_EPS_DECAY     = 0.998
 
 # --- DQN-specific defaults ---------------------------------------------------
 DQN_LEARNING_RATE    = 0.001
-DQN_EPS_DECAY        = 0.9984    # reaches eps_end ≈ 0.02 in ~5000 episodes
-DQN_DEFAULT_EPISODES = 5000
+DQN_EPS_DECAY        = 0.9991    # reaches eps_end ≈ 0.02 in ~10000 episodes
+DQN_DEFAULT_EPISODES = 10000
 DQN_BATCH_SIZE       = 64
-DQN_MEMORY_SIZE      = 50000
-DQN_TARGET_UPDATE    = 250
+DQN_MEMORY_SIZE      = 200000
+DQN_TARGET_UPDATE    = 500
 DQN_TRAIN_EVERY      = 1
-DQN_INPUT_SIZE       = 40        # 2 position + 23 dirt + 5 history + 10 DNUT
+DQN_INPUT_SIZE       = 125       # 2 pos + 108 dirt + 5 history + 10 DNUT
 
 # --- File paths ---------------------------------------------------------------
 QL_MODEL_PATH      = os.path.join(MODELS_DIR, "q_table.pkl")
@@ -116,7 +118,14 @@ _ROOM_COLORS = {
     EMPTY:       [0.31, 0.31, 0.31],
     KITCHEN:     [1.00, 1.00, 0.70],
     LIVING_ROOM: [0.70, 0.78, 1.00],
+    BEDROOM:     [0.78, 0.90, 1.00],
+    DINING:      [1.00, 0.82, 0.69],
+    BATHROOM:    [0.71, 0.87, 0.94],
+    GARAGE:      [0.76, 0.76, 0.72],
+    LAUNDRY:     [0.82, 0.74, 0.90],
+    OFFICE:      [1.00, 0.86, 0.78],
     HALLWAY:     [0.78, 0.78, 0.78],
+    CHARGER:     [1.00, 0.78, 0.00],
 }
 
 ACTION_NAMES = {0: "Forward", 1: "Backward", 2: "Left", 3: "Right",
@@ -191,12 +200,12 @@ def _env_to_features(env):
     """
     Extract a feature vector from the current environment state for DQN.
 
-        Feature vector (40 elements):
-      [0]     : robot_row  (normalised 0-1)
-      [1]     : robot_col  (normalised 0-1)
-      [2:25]  : dirt status of each of the 23 cleanable tiles (0.0 or 1.0)
-            [25:30] : one-hot encoded movement history (came_from direction)
-            [30:40] : one-hot encoded DNUT direction to nearest dirty tile
+    Feature vector (125 elements):
+      [0]       : robot_row  (normalised 0-1)
+      [1]       : robot_col  (normalised 0-1)
+      [2:110]   : dirt status of each of the 108 cleanable tiles (0.0 or 1.0)
+      [110:115] : one-hot encoded movement history (came_from direction)
+      [115:125] : one-hot encoded dual-purpose DNUT direction (dirty / charger)
 
     Parameters
     ----------
@@ -205,22 +214,26 @@ def _env_to_features(env):
 
     Returns
     -------
-    numpy.ndarray, shape (40,), dtype float32
+    numpy.ndarray, shape (125,), dtype float32
     """
     features = np.zeros(DQN_INPUT_SIZE, dtype=np.float32)
+    
+    # Normalize position
     features[0] = env.robot_row / max(GRID_HEIGHT - 1, 1)
     features[1] = env.robot_col / max(GRID_WIDTH - 1, 1)
-
+    
+    # Dirt status for all cleanable tiles (offsets start at 2)
     for i, (row, col) in enumerate(env.cleanable_tiles):
-        features[2 + i] = 1.0 if env.dirt_map[row][col] == 1 else 0.0
-
-    # Movement history: 5 bins (N, S, E, W, none)
-    features[25 + int(env.last_direction)] = 1.0
-
-    # Direction to nearest dirty tile: 10 bins (3x3 relative direction + none)
+        features[2 + i] = 1.0 if env.dirt_map[row][col] == DIRTY else 0.0
+    
+    # Movement history: 5 bins (N, S, E, W, none) - offsets [110:115]
+    N = env.num_cleanable  # 108
+    features[2 + N + int(env.last_direction)] = 1.0
+    
+    # Dual-purpose DNUT direction: 10 bins (3×3 + at_destination) - offsets [115:125]
     dnut_direction = int(env._get_nearest_dirty_direction())
-    features[30 + dnut_direction] = 1.0
-
+    features[2 + N + 5 + dnut_direction] = 1.0
+    
     return features
 
 
@@ -257,7 +270,8 @@ def print_menu():
     print("  |  [9]  Show Optimal Path - DQN                    |")
     print("  |  --- COMPARISON ---                              |")
     print("  |  [10] Compare All Algorithms (Dashboard)         |")
-    print("  |  [11] Quick Train & Compare All                  |")
+    print("  |  [11] Train All + Auto Test + Compare            |")
+    print("  |  [12] Train One Then Test                        |")
     print("  |  [0]  Exit                                       |")
     print("  +--------------------------------------------------+")
 
@@ -271,7 +285,7 @@ def _make_agent(algo, env):
     Instantiate the correct agent class.
 
     For tabular agents (Q-Learning, SARSA): uses env.observation_space.n
-    For DQN: uses DQN_INPUT_SIZE (25-dim feature vector)
+    For DQN: uses DQN_INPUT_SIZE (125-dim feature vector)
     """
     action_size = env.action_space.n
 
@@ -288,6 +302,7 @@ def _make_agent(algo, env):
             memory_size=DQN_MEMORY_SIZE,
             target_update=DQN_TARGET_UPDATE,
             train_every=DQN_TRAIN_EVERY,
+            hidden_size=128,
         )
 
     cls = QLearningAgent if algo == "qlearning" else SarsaAgent
@@ -342,7 +357,7 @@ def train(algo="qlearning", num_episodes=None, render_every=0,
 
     # --- Tracking lists ------------------------------------------------------
     ep_rewards, ep_tiles, ep_steps = [], [], []
-    eps_history, success_history = [], []
+    eps_history, cleaned_all_history, completed_history, success_history = [], [], [], []
     best_reward = float("-inf")
     total_successes = 0
     start = time.time()
@@ -398,9 +413,18 @@ def train(algo="qlearning", num_episodes=None, render_every=0,
         ep_tiles.append(info["tiles_cleaned"])
         ep_steps.append(steps)
         eps_history.append(agent.epsilon)
-        success = info["tiles_cleaned"] == env.num_cleanable
-        success_history.append(success)
-        if success:
+        cleaned_all = info["tiles_cleaned"] == env.num_cleanable
+        completed_task = bool(
+            terminated
+            and cleaned_all
+            and info.get("robot_position") == (CHARGER_ROW, CHARGER_COL)
+        )
+        cleaned_all_history.append(cleaned_all)
+        completed_history.append(completed_task)
+        # Keep "success" for backward compatibility with existing dashboards;
+        # from now on it represents full task completion.
+        success_history.append(completed_task)
+        if completed_task:
             total_successes += 1
         if ep_reward > best_reward:
             best_reward = ep_reward
@@ -412,10 +436,12 @@ def train(algo="qlearning", num_episodes=None, render_every=0,
             r100 = ep_rewards[-100:]
             t100 = ep_tiles[-100:]
             s100 = success_history[-100:]
+            c100 = cleaned_all_history[-100:]
             print(f"  Ep {ep:5d}/{num_episodes} | "
                   f"Reward:{np.mean(r100):7.1f} | "
                   f"Tiles:{np.mean(t100):5.1f}/{env.num_cleanable} | "
-                  f"Succ:{sum(s100)/len(s100)*100:5.1f}% | "
+                f"CleanAll:{sum(c100)/len(c100)*100:5.1f}% | "
+                f"Done:{sum(s100)/len(s100)*100:5.1f}% | "
                   f"eps:{agent.epsilon:.4f} | "
                   f"T:{format_time(time.time()-start)}")
 
@@ -425,6 +451,7 @@ def train(algo="qlearning", num_episodes=None, render_every=0,
     last_r = ep_rewards[-100:]
     last_t = ep_tiles[-100:]
     last_s = success_history[-100:]
+    last_c = cleaned_all_history[-100:]
 
     if not silent:
         print("\n" + "=" * 70)
@@ -432,7 +459,8 @@ def train(algo="qlearning", num_episodes=None, render_every=0,
         print("=" * 70)
         print(f"  Avg Reward (last 100):  {np.mean(last_r):.1f}")
         print(f"  Avg Tiles  (last 100):  {np.mean(last_t):.1f}/{env.num_cleanable}")
-        print(f"  Success %  (last 100):  {sum(last_s)/len(last_s)*100:.1f}%")
+        print(f"  Clean-All % (last 100): {sum(last_c)/len(last_c)*100:.1f}%")
+        print(f"  Completed % (last 100): {sum(last_s)/len(last_s)*100:.1f}%")
         print(f"  Best Reward:            {best_reward:.1f}")
         if algo == "dqn":
             print(f"  Network params:         {agent.num_parameters}")
@@ -451,6 +479,8 @@ def train(algo="qlearning", num_episodes=None, render_every=0,
         "tiles": ep_tiles,
         "steps": ep_steps,
         "epsilon": eps_history,
+        "cleaned_all": cleaned_all_history,
+        "completed": completed_history,
         "success": success_history,
         "num_episodes": num_episodes,
         "elapsed": elapsed,
@@ -503,7 +533,7 @@ def test_agent_ui(algo="qlearning", num_episodes=10, speed="normal"):
     print("-" * 70)
 
     # --- Trained agent episodes ----------------------------------------------
-    rewards, tiles, steps_all, successes = [], [], [], []
+    rewards, tiles, steps_all, cleaned_all_flags, completed_flags = [], [], [], [], []
 
     for ep in range(1, num_episodes + 1):
         state, info = env.reset()
@@ -523,12 +553,18 @@ def test_agent_ui(algo="qlearning", num_episodes=10, speed="normal"):
             state = next_state
             env.render()
 
-        ok = info["tiles_cleaned"] == env.num_cleanable
+        cleaned_all = info["tiles_cleaned"] == env.num_cleanable
+        completed = bool(
+            terminated
+            and cleaned_all
+            and info.get("robot_position") == (CHARGER_ROW, CHARGER_COL)
+        )
         rewards.append(ep_reward)
         tiles.append(info["tiles_cleaned"])
         steps_all.append(steps)
-        successes.append(ok)
-        tag = "SUCCESS" if ok else "INCOMPLETE"
+        cleaned_all_flags.append(cleaned_all)
+        completed_flags.append(completed)
+        tag = "COMPLETE" if completed else ("CLEANED_ALL" if cleaned_all else "INCOMPLETE")
         print(f"  Ep {ep:3d}: Reward={ep_reward:7.1f} | "
               f"Tiles={info['tiles_cleaned']:2d}/{env.num_cleanable} | "
               f"Steps={steps:3d} | {tag}")
@@ -538,7 +574,7 @@ def test_agent_ui(algo="qlearning", num_episodes=10, speed="normal"):
     # --- Random baseline (headless) ------------------------------------------
     print("\n  Running random baseline...")
     env2 = CleaningEnv(render_mode=None)
-    rand_rew, rand_til, rand_suc = [], [], []
+    rand_rew, rand_til, rand_clean_all, rand_completed = [], [], [], []
     for _ in range(num_episodes):
         s, _ = env2.reset()
         r_sum, d = 0, False
@@ -548,7 +584,14 @@ def test_agent_ui(algo="qlearning", num_episodes=10, speed="normal"):
             d = term or trunc
         rand_rew.append(r_sum)
         rand_til.append(info2["tiles_cleaned"])
-        rand_suc.append(info2["tiles_cleaned"] == env2.num_cleanable)
+        cleaned_all2 = info2["tiles_cleaned"] == env2.num_cleanable
+        completed2 = bool(
+            term
+            and cleaned_all2
+            and info2.get("robot_position") == (CHARGER_ROW, CHARGER_COL)
+        )
+        rand_clean_all.append(cleaned_all2)
+        rand_completed.append(completed2)
     env2.close()
 
     # --- Results summary -----------------------------------------------------
@@ -559,12 +602,14 @@ def test_agent_ui(algo="qlearning", num_episodes=10, speed="normal"):
     print("  " + "-" * 50)
     print(f"  {'Avg Reward':<22} {np.mean(rewards):>12.1f}  {np.mean(rand_rew):>12.1f}")
     print(f"  {'Avg Tiles':<22} {np.mean(tiles):>12.1f}  {np.mean(rand_til):>12.1f}")
-    print(f"  {'Success %':<22} {sum(successes)/len(successes)*100:>12.1f}  "
-          f"{sum(rand_suc)/len(rand_suc)*100:>12.1f}")
+    print(f"  {'Clean-All %':<22} {sum(cleaned_all_flags)/len(cleaned_all_flags)*100:>12.1f}  "
+          f"{sum(rand_clean_all)/len(rand_clean_all)*100:>12.1f}")
+    print(f"  {'Completed %':<22} {sum(completed_flags)/len(completed_flags)*100:>12.1f}  "
+          f"{sum(rand_completed)/len(rand_completed)*100:>12.1f}")
     print(f"  {'Avg Steps':<22} {np.mean(steps_all):>12.1f}  {'---':>12}")
     print()
 
-    rate = sum(successes) / len(successes) * 100
+    rate = sum(completed_flags) / len(completed_flags) * 100
     if   rate >= 90: grade = "***** EXCELLENT"
     elif rate >= 70: grade = "****  GOOD"
     elif rate >= 50: grade = "***   MODERATE"
@@ -574,9 +619,14 @@ def test_agent_ui(algo="qlearning", num_episodes=10, speed="normal"):
 
     return {
         "trained_rewards": rewards, "trained_tiles": tiles,
-        "trained_steps": steps_all, "trained_success": successes,
+        "trained_steps": steps_all,
+        "trained_cleaned_all": cleaned_all_flags,
+        "trained_completed": completed_flags,
+        "trained_success": completed_flags,
         "random_rewards": rand_rew, "random_tiles": rand_til,
-        "random_success": rand_suc,
+        "random_cleaned_all": rand_clean_all,
+        "random_completed": rand_completed,
+        "random_success": rand_completed,
     }
 
 
@@ -740,16 +790,26 @@ def _room_label(ax, layout):
     for r in range(GRID_HEIGHT):
         for c in range(GRID_WIDTH):
             rt = layout[r][c]
-            if rt != EMPTY:
+            if rt != EMPTY and rt != CHARGER:
                 cells[rt].append((r, c))
-    names = {KITCHEN: "Kitchen", LIVING_ROOM: "Living\nRoom", HALLWAY: "Hallway"}
+    names = {
+        KITCHEN: "Kitchen",
+        LIVING_ROOM: "Living\nRoom",
+        BEDROOM: "Bedroom",
+        DINING: "Dining",
+        BATHROOM: "Bath",
+        GARAGE: "Garage",
+        LAUNDRY: "Laundry",
+        OFFICE: "Office",
+        HALLWAY: "Hallway"
+    }
     for rt, pos_list in cells.items():
         rows = [p[0] for p in pos_list]
         cols = [p[1] for p in pos_list]
         cr = (min(rows) + max(rows)) / 2
         cc = (min(cols) + max(cols)) / 2
         ax.text(cc, cr, names.get(rt, ""), ha="center", va="center",
-                fontsize=9, fontweight="bold", color="#555555", alpha=0.35)
+                fontsize=8, fontweight="bold", color="#555555", alpha=0.35)
 
 
 # ############################################################################
@@ -831,7 +891,8 @@ def comparison_dashboard(histories=None):
         last = min(100, len(h["rewards"]))
         r_last = h["rewards"][-last:]
         t_last = h["tiles"][-last:]
-        s_last = h["success"][-last:]
+        success_series = h.get("completed", h.get("success", []))
+        s_last = success_series[-last:]
         st_last = h["steps"][-last:]
         stats[k] = {
             "avg_reward":       np.mean(r_last),
@@ -843,10 +904,10 @@ def comparison_dashboard(histories=None):
             "worst_reward":     min(h["rewards"]),
             "time":             h["elapsed"],
             "episodes":         h["num_episodes"],
-            "conv_50":          _convergence_episode(h["success"], 0.50),
-            "conv_75":          _convergence_episode(h["success"], 0.75),
-            "conv_90":          _convergence_episode(h["success"], 0.90),
-            "conv_100":         _convergence_episode(h["success"], 0.99),
+            "conv_50":          _convergence_episode(success_series, 0.50),
+            "conv_75":          _convergence_episode(success_series, 0.75),
+            "conv_90":          _convergence_episode(success_series, 0.90),
+            "conv_100":         _convergence_episode(success_series, 0.99),
             "reward_per_sec":   np.mean(r_last) / max(h["elapsed"], 0.1),
             "sample_eff":       np.mean(r_last) / max(h["num_episodes"], 1),
         }
@@ -885,7 +946,8 @@ def comparison_dashboard(histories=None):
                                 color=c, alpha=0.10)
 
         # Success rate
-        sm_s = smooth([int(v) * 100 for v in hist["success"]])
+        success_series = hist.get("completed", hist.get("success", []))
+        sm_s = smooth([int(v) * 100 for v in success_series])
         axes[1, 0].plot(sm_s, color=c, lw=2, label=lbl)
 
         # Add convergence marker (90% success)
@@ -909,7 +971,7 @@ def comparison_dashboard(histories=None):
     axes[0, 1].legend(fontsize=9); axes[0, 1].grid(True, alpha=0.3)
 
     axes[1, 0].set_ylabel("Success %"); axes[1, 0].set_xlabel("Episode")
-    axes[1, 0].set_title("Success Rate (★ = 90% convergence point)")
+    axes[1, 0].set_title("Completed Task Rate (★ = 90% convergence point)")
     axes[1, 0].legend(fontsize=9); axes[1, 0].grid(True, alpha=0.3)
     axes[1, 0].set_ylim(-5, 105)
     axes[1, 0].axhline(90, color="gray", ls=":", alpha=0.4, lw=1)
@@ -969,7 +1031,7 @@ def comparison_dashboard(histories=None):
     bar_metrics = [
         ("Avg Reward",       [stats[k]["avg_reward"]   for k in algo_keys], "high", "{:.1f}"),
         ("Avg Tiles Cleaned",[stats[k]["avg_tiles"]    for k in algo_keys], "high", "{:.1f}"),
-        ("Success Rate %",   [stats[k]["success_rate"] for k in algo_keys], "high", "{:.1f}%"),
+        ("Completed %",      [stats[k]["success_rate"] for k in algo_keys], "high", "{:.1f}%"),
         ("Avg Steps",        [stats[k]["avg_steps"]    for k in algo_keys], "low",  "{:.0f}"),
         ("Reward Stability\n(lower σ = better)",
                              [stats[k]["reward_std"]   for k in algo_keys], "low",  "{:.1f}"),
@@ -1068,7 +1130,7 @@ def comparison_dashboard(histories=None):
     ax4d.set_visible(False)               # hide cartesian axes
     ax_radar = fig4.add_subplot(2, 2, 4, polar=True)
 
-    radar_dims = ["Avg Reward", "Tiles Cleaned", "Success %",
+    radar_dims = ["Avg Reward", "Tiles Cleaned", "Completed %",
                   "Stability", "Speed", "Efficiency"]
     n_dims = len(radar_dims)
 
@@ -1280,9 +1342,9 @@ def comparison_dashboard(histories=None):
         # Data-driven observation
         s = stats[key]
         if s["conv_90"] is not None:
-            print(f"    > Reached 90% success at episode {s['conv_90']}")
+            print(f"    > Reached 90% completion at episode {s['conv_90']}")
         else:
-            print(f"    > Did NOT reach 90% success rate")
+                print(f"    > Did NOT reach 90% completion rate")
         print(f"    > Final reward: {s['avg_reward']:.1f} ± {s['reward_std']:.1f}")
 
     # ====================================================================
@@ -1319,7 +1381,7 @@ def comparison_dashboard(histories=None):
             fastest_ep = ep
             fastest_conv = k
     if fastest_conv:
-        print(f"  Fastest to 90% success: {_algo_label(fastest_conv)} "
+          print(f"  Fastest to 90% completion: {_algo_label(fastest_conv)} "
               f"(ep {fastest_ep})")
 
     best_reward_key = max(algo_keys, key=lambda k: stats[k]["avg_reward"])
@@ -1346,6 +1408,10 @@ def menu_train(algo):
     default_ep = DQN_DEFAULT_EPISODES if algo == "dqn" else DEFAULT_EPISODES
     eps = get_int("Number of episodes", default_ep, 100, 50000)
     render = get_int("Render every N episodes (0=never)", 0, 0, eps)
+    if render > 0:
+        print(f"  Live environment visualization: ON (every {render} episodes)")
+    else:
+        print("  Live environment visualization: OFF")
     train(algo=algo, num_episodes=eps, render_every=render)
     wait_for_enter()
 
@@ -1377,18 +1443,93 @@ def menu_compare():
     wait_for_enter()
 
 
+def _prompt_test_settings(default_episodes=10):
+    eps = get_int("Number of test episodes", default_episodes, 1, 200)
+    sp = input("  Test speed [slow/normal/fast] (normal): ").strip().lower() or "normal"
+    if sp not in ("slow", "normal", "fast"):
+        print("  Invalid speed entered, using 'normal'.")
+        sp = "normal"
+    return eps, sp
+
+
+def menu_train_all_auto():
+    print_header("TRAIN ALL + AUTO TEST + COMPARE", width=60)
+    shared_eps = get_int("Shared episodes for ALL algorithms", 2000, 100, 50000)
+    render = get_int("Render every N episodes during training (0=never)", 0, 0, shared_eps)
+    test_eps, test_speed = _prompt_test_settings(default_episodes=5)
+
+    print(f"\n  Shared episodes: {shared_eps}")
+    print(f"  Training render: {'OFF' if render == 0 else f'ON (every {render} episodes)'}")
+    print(f"  Auto-test: {test_eps} episodes @ {test_speed}")
+    if not yn("Continue?", "y"):
+        return
+
+    histories = {}
+    test_results = {}
+
+    for algo in ("qlearning", "sarsa", "dqn"):
+        histories[algo] = train(algo=algo, num_episodes=shared_eps, render_every=render)
+
+    print("\n" + "=" * 70)
+    print("  AUTO TESTING TRAINED AGENTS")
+    print("=" * 70)
+    for algo in ("qlearning", "sarsa", "dqn"):
+        test_results[algo] = test_agent_ui(algo=algo, num_episodes=test_eps, speed=test_speed)
+
+    print("\n" + "=" * 70)
+    print("  AUTO COMPARISON DASHBOARD")
+    print("=" * 70)
+    comparison_dashboard(histories)
+    wait_for_enter()
+
+
+def menu_train_then_test(algo):
+    label = _algo_label(algo)
+    print_header(f"TRAIN THEN TEST - {label.upper()}", width=60)
+    default_ep = DQN_DEFAULT_EPISODES if algo == "dqn" else DEFAULT_EPISODES
+    train_eps = get_int("Training episodes", default_ep, 100, 50000)
+    render = get_int("Render every N episodes during training (0=never)", 0, 0, train_eps)
+    test_eps, test_speed = _prompt_test_settings(default_episodes=10)
+
+    print(f"\n  Algorithm: {_algo_label(algo)}")
+    print(f"  Train episodes: {train_eps}")
+    print(f"  Train render: {'OFF' if render == 0 else f'ON (every {render} episodes)'}")
+    print(f"  Test episodes: {test_eps} @ {test_speed}")
+    if not yn("Continue?", "y"):
+        return
+
+    train(algo=algo, num_episodes=train_eps, render_every=render)
+    test_agent_ui(algo=algo, num_episodes=test_eps, speed=test_speed)
+    wait_for_enter()
+
+
+def menu_train_then_test_select():
+    print_header("SELECT ALGORITHM - TRAIN THEN TEST", width=60)
+    print("  [1] Q-Learning")
+    print("  [2] SARSA")
+    print("  [3] DQN")
+    choice = input("\n  Choose algorithm [1-3]: ").strip()
+    mapping = {"1": "qlearning", "2": "sarsa", "3": "dqn"}
+    algo = mapping.get(choice)
+    if algo is None:
+        print("  Invalid choice.")
+        wait_for_enter()
+        return
+    menu_train_then_test(algo)
+
+
 def menu_quick():
     print_header("QUICK TRAIN & COMPARE ALL", width=60)
-    tab_eps = get_int("Episodes for Q-Learning & SARSA", 3000, 500, 50000)
-    dqn_eps = get_int("Episodes for DQN", DQN_DEFAULT_EPISODES, 500, 50000)
-    print(f"\n  Q-Learning & SARSA: {tab_eps} episodes each")
-    print(f"  DQN:                {dqn_eps} episodes")
+    shared_eps = get_int("Shared episodes for all algorithms", 2000, 100, 50000)
+    render = get_int("Render every N episodes during training (0=never)", 0, 0, shared_eps)
+    print(f"\n  Q-Learning, SARSA, DQN: {shared_eps} episodes each")
+    print(f"  Training render: {'OFF' if render == 0 else f'ON (every {render} episodes)'}")
     if not yn("Continue?", "y"):
         return
     histories = {}
-    histories["qlearning"] = train(algo="qlearning", num_episodes=tab_eps)
-    histories["sarsa"] = train(algo="sarsa", num_episodes=tab_eps)
-    histories["dqn"] = train(algo="dqn", num_episodes=dqn_eps)
+    histories["qlearning"] = train(algo="qlearning", num_episodes=shared_eps, render_every=render)
+    histories["sarsa"] = train(algo="sarsa", num_episodes=shared_eps, render_every=render)
+    histories["dqn"] = train(algo="dqn", num_episodes=shared_eps, render_every=render)
     comparison_dashboard(histories)
     wait_for_enter()
 
@@ -1403,7 +1544,7 @@ def main():
         print_banner()
         print_menu()
 
-        choice = input("\n  Enter your choice [0-11]: ").strip()
+        choice = input("\n  Enter your choice [0-12]: ").strip()
         try:
             if   choice == "1":  menu_train("qlearning")
             elif choice == "2":  menu_train("sarsa")
@@ -1415,12 +1556,13 @@ def main():
             elif choice == "8":  menu_show_path("sarsa")
             elif choice == "9":  menu_show_path("dqn")
             elif choice == "10": menu_compare()
-            elif choice == "11": menu_quick()
+            elif choice == "11": menu_train_all_auto()
+            elif choice == "12": menu_train_then_test_select()
             elif choice == "0":
                 print("\n  Goodbye!\n")
                 break
             else:
-                print("  Invalid choice. Enter 0-11.")
+                print("  Invalid choice. Enter 0-12.")
                 wait_for_enter()
         except KeyboardInterrupt:
             print("\n  Interrupted.")

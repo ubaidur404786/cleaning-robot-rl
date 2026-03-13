@@ -24,12 +24,12 @@ This environment implements a PURE Q-Learning setup where:
 State = position × is_dirty × came_from × dnut_direction
 
 Components:
-- 23 positions (one per cleanable tile)
-- 2 dirt statuses (current tile clean/dirty)
+- 109 positions (108 cleanable tiles + 1 charger position)
+- 2 dirt statuses (current tile clean/dirty; charger always 0)
 - 5 movement history values (N/S/E/W/none)
-- 10 DNUT direction values (3×3 relative direction grid + none)
+- 10 DNUT direction values (3×3 relative direction grid + none/"at destination")
 
-State Space Size: 23 × 2 × 5 × 10 = 2300 states
+State Space Size: 109 × 2 × 5 × 10 = 10,900 states
 
 ================================================================================
 ⚡ ACTION SPACE
@@ -76,25 +76,39 @@ the closest uncleaned area. When no dirty tiles remain, a special "none"
 value is used.
 
 ================================================================================
-🏠 HOUSE LAYOUT
+🏠 HOUSE LAYOUT (18×12 with 8 rooms + charging station)
 ================================================================================
 
-The house is an 8×6 grid with 3 rooms:
+The house is an 18×12 grid with 8 rooms, multiple hallways, and a charging
+station in a dedicated nook. Robot starts at charger and must return there
+after cleaning all tiles to fully complete the task.
 
-    Col:  0    1    2    3    4    5    6    7
-Row 0:  [WALL][WALL][WALL][WALL][WALL][WALL][WALL][WALL]
-Row 1:  [WALL][KTCH][KTCH][KTCH][WALL][LIVG][LIVG][WALL]
-Row 2:  [WALL][KTCH][KTCH][KTCH][HALL][LIVG][LIVG][WALL]
-Row 3:  [WALL][KTCH][KTCH][KTCH][HALL][LIVG][LIVG][WALL]
-Row 4:  [WALL][HALL][HALL][HALL][HALL][HALL][HALL][WALL]
-Row 5:  [WALL][WALL][WALL][WALL][WALL][WALL][WALL][WALL]
+    Col:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17
+Row  0:  [W][W][W][W][W][W][W][W][W][W][W][W][W][W][W][W][W][W]  walls
+Row  1:  [W][K][K][K][W][B][B][B][B][W][W][L][L][L][L][W][W][W]  Kitchen, Bedroom, Living
+Row  2:  [W][K][K][K][W][B][B][B][B][W][W][L][L][L][L][W][W][W]
+Row  3:  [W][K][K][K][W][B][B][B][B][W][W][L][L][L][L][W][W][W]
+Row  4:  [W][H][H][H][H][H][H][H][H][H][H][H][H][H][H][W][W][W]  top hallway (14 tiles)
+Row  5:  [W][T][T][T][W][H][H][H][H][W][W][D][D][D][W][W][W][W]  Bath, mid-hall, Dining
+Row  6:  [W][T][T][T][W][H][H][H][H][W][W][D][D][D][W][W][W][W]
+Row  7:  [W][H][H][H][H][H][H][H][H][H][H][H][H][H][H][W][W][W]  bot hallway (14 tiles)
+Row  8:  [W][G][G][G][W][LN][LN][LN][W][C*][O][O][O][W][W][W][W][W]  Garage, Laundry, Charger(8,9), Office
+Row  9:  [W][G][G][G][W][LN][LN][LN][W][ W][O][O][O][W][W][W][W][W]
+Row 10:  [W][G][G][G][W][LN][LN][LN][W][ W][O][O][O][W][W][W][W][W]
+Row 11:  [W][W][W][W][W][W][W][W][W][W][W][W][W][W][W][W][W][W]  walls
 
-KTCH = Kitchen (Yellow - 9 tiles, +50 reward each)
-LIVG = Living Room (Blue - 6 tiles, +35 reward each)
-HALL = Hallway (Gray - 8 tiles, +20 reward each)
-WALL = Walls/Outside (Dark gray - robot cannot enter)
+K=Kitchen(9), B=Bedroom(12), L=Living(12), H=Hallway(28), T=Bathroom(6),
+D=Dining(6), G=Garage(9), LN=Laundry(9), O=Office(9), C*=Charger(docking)
+Total cleanable tiles: 108 (excluding charger which is walkable but not dirty)
 
-Total cleanable tiles: 23 tiles
+================================================================================
+DNUT (Dual-Purpose Navigation Hint)
+================================================================================
+
+Direction to nearest thing-to-seek:
+- While dirty tiles exist: direction to nearest dirty tile
+- When all clean: direction to charging station
+- At charger with all clean: state bin 9 ("done")
 
 ================================================================================
 """
@@ -109,18 +123,30 @@ import pygame
 # ================================================================================
 
 # Grid dimensions
-GRID_WIDTH = 8    # Number of columns in the grid
-GRID_HEIGHT = 6   # Number of rows in the grid
+GRID_WIDTH = 18    # Number of columns in the grid
+GRID_HEIGHT = 12   # Number of rows in the grid
+CELL_SIZE = 62     # Pixel size of each grid cell in Pygame rendering
 
 # Room type identifiers (used in room_layout array)
-EMPTY = 0         # Wall/Outside area - robot cannot enter
-KITCHEN = 1       # Kitchen room (highest cleaning priority)
-LIVING_ROOM = 2   # Living room (medium cleaning priority)
-HALLWAY = 3       # Hallway (lowest cleaning priority)
+EMPTY = 0          # Wall/Outside area - robot cannot enter
+KITCHEN = 1        # Kitchen (highest priority, +50)
+LIVING_ROOM = 2    # Living room (high priority, +45)
+HALLWAY = 3        # Hallway/connector (lowest priority, +15)
+BEDROOM = 4        # Bedroom (medium-high priority, +40)
+DINING = 5         # Dining room (medium priority, +35)
+BATHROOM = 6       # Bathroom (low-medium priority, +25)
+GARAGE = 7         # Garage (low priority, +20)
+LAUNDRY = 8        # Laundry room (medium priority, +30)
+OFFICE = 9         # Office/study (medium priority, +35)
+CHARGER = 10       # Charging station (not cleanable, walkable)
+
+# Special position of charging station
+CHARGER_ROW = 8
+CHARGER_COL = 9
 
 # Tile cleanliness states
-CLEAN = 0         # Tile has been cleaned
-DIRTY = 1         # Tile needs cleaning
+CLEAN = 0          # Tile has been cleaned
+DIRTY = 1          # Tile needs cleaning
 
 # ================================================================================
 # ACTION DEFINITIONS
@@ -154,15 +180,22 @@ NUM_ACTIONS = 6
 # Rewards are dirt-conditional: only dirty tiles give positive reward.
 
 # Cleaning rewards (positive) - Only awarded when tile is DIRTY
-REWARD_CLEAN_KITCHEN = 50      # Kitchen has highest priority
-REWARD_CLEAN_LIVING = 35       # Living room has medium priority
-REWARD_CLEAN_HALLWAY = 20      # Hallway has lowest priority
+REWARD_CLEAN_KITCHEN = 50        # Kitchen highest priority
+REWARD_CLEAN_LIVING = 45         # Living room
+REWARD_CLEAN_BEDROOM = 40        # Bedroom
+REWARD_CLEAN_DINING = 35         # Dining room
+REWARD_CLEAN_LAUNDRY = 30        # Laundry room
+REWARD_CLEAN_OFFICE = 35         # Office
+REWARD_CLEAN_BATHROOM = 25       # Bathroom
+REWARD_CLEAN_GARAGE = 20         # Garage lowest priority
+REWARD_CLEAN_HALLWAY = 15        # Hallway connects rooms
 
-# Completion bonus - Big reward for cleaning everything
-REWARD_ALL_CLEAN_BONUS = 200   # Encourages completing the task
+# Completion bonuses
+REWARD_ALL_CLEAN_BONUS = 100     # All tiles cleaned (partial)
+REWARD_RETURN_CHARGER = 200      # Returned to charger (full completion)
 
 # Penalty values (negative) - Discourage wasteful actions
-REWARD_STEP_ON_CLEAN = -5         # Stepping on an already-clean tile
+REWARD_STEP_ON_CLEAN = -5         # Stepping on already-clean tile
 REWARD_CLEAN_ALREADY_CLEAN = -10  # Using Clean action on clean tile
 REWARD_HIT_WALL = -5              # Penalize trying to move into walls
 REWARD_WAIT = -3                  # Penalize waiting (wastes time)
@@ -172,16 +205,27 @@ REWARD_STEP_PENALTY = -0.1        # Small penalty per step (encourages efficienc
 # VISUALIZATION COLORS (RGB format for Pygame)
 # ================================================================================
 
-COLOR_KITCHEN = (255, 255, 180)       # Light yellow for kitchen
-COLOR_LIVING_ROOM = (180, 200, 255)   # Light blue for living room
-COLOR_HALLWAY = (200, 200, 200)       # Light gray for hallway
-COLOR_WALL = (80, 80, 80)             # Dark gray for walls
-COLOR_ROBOT = (50, 180, 50)           # Green for robot
-COLOR_DIRTY = (139, 90, 43)           # Brown for dirty tiles
-COLOR_CLEAN_MARKER = (100, 220, 100)  # Bright green checkmark for cleaned
-COLOR_GRID_LINE = (50, 50, 50)        # Dark lines for grid
-COLOR_TEXT = (255, 255, 255)          # White text
-COLOR_BLACK = (0, 0, 0)               # Black for outlines
+COLOR_KITCHEN = (255, 255, 180)              # Light yellow for kitchen
+COLOR_LIVING_ROOM = (180, 200, 255)          # Light blue for living room
+COLOR_BEDROOM = (200, 230, 255)              # Sky blue for bedroom
+COLOR_DINING = (255, 210, 180)               # Peach for dining
+COLOR_BATHROOM = (180, 220, 240)             # Light cyan for bathroom
+COLOR_GARAGE = (195, 195, 185)               # Cool gray for garage
+COLOR_LAUNDRY = (210, 190, 230)              # Lavender for laundry
+COLOR_OFFICE = (255, 220, 200)               # Warm amber for office
+COLOR_HALLWAY = (200, 200, 200)              # Light gray for hallway
+COLOR_CHARGER = (255, 200, 0)                # Gold for charger
+COLOR_WALL = (80, 80, 80)                    # Dark gray for walls
+COLOR_WINDOW_GLASS = (150, 180, 220)         # Light blue-gray for windows
+COLOR_DOOR_FRAME = (120, 80, 40)             # Brown for door frames
+COLOR_ROBOT = (50, 180, 50)                  # Green for robot
+COLOR_ROBOT_HALO = (255, 200, 0)             # Gold halo at charger
+COLOR_DIRTY = (139, 90, 43)                  # Brown for dirty tiles
+COLOR_CLEAN_MARKER = (100, 220, 100)         # Bright green checkmark
+COLOR_GRID_LINE = (50, 50, 50)               # Dark lines for grid
+COLOR_TEXT = (255, 255, 255)                 # White text
+COLOR_BLACK = (0, 0, 0)                      # Black for outlines
+COLOR_LIGHTNING = (255, 255, 100)            # Yellow for lightning bolt
 
 
 class CleaningEnv(gym.Env):
@@ -256,7 +300,11 @@ class CleaningEnv(gym.Env):
         # These variables will be initialized when render() is first called
         self.window = None           # Pygame window object
         self.clock = None            # Pygame clock for frame rate control
-        self.cell_size = 100         # Pixel size of each grid cell
+        
+        # Precompute window and door cells for rendering
+        self.window_cells = set()    # Cells on outer walls with adjacent rooms
+        self.door_edges = set()      # Shared edges between hallway and rooms
+        self._precompute_door_window_cells()
         
         # ======================================================================
         # ACTION SPACE DEFINITION
@@ -272,34 +320,36 @@ class CleaningEnv(gym.Env):
         self.room_layout = self._create_room_layout()
         
         # ======================================================================
-        # IDENTIFY CLEANABLE TILES
+        # IDENTIFY CLEANABLE TILES (EXCLUDES CHARGER)
         # ======================================================================
-        # Create a list of all tiles that can be cleaned (i.e., not walls)
-        # We iterate through the grid and collect positions where room != EMPTY
+        # Create a list of all tiles that can be cleaned (i.e., not walls, not charger)
+        # We iterate through the grid and collect positions where room != EMPTY and != CHARGER
         self.cleanable_tiles = []
         for row in range(GRID_HEIGHT):
             for col in range(GRID_WIDTH):
-                if self.room_layout[row][col] != EMPTY:
+                rt = self.room_layout[row][col]
+                if rt != EMPTY and rt != CHARGER:
                     self.cleanable_tiles.append((row, col))
         
         # Store the total number of cleanable tiles
         self.num_cleanable = len(self.cleanable_tiles)
         
         # ======================================================================
-        # POSITION INDEX MAPPING
+        # POSITION INDEX MAPPING (includes charger at index num_cleanable)
         # ======================================================================
         # Map (row, col) coordinates to integer indices for state encoding
         # This allows us to convert 2D positions to a single number for Q-table
         #
-        # Example:
-        #   pos_to_index[(1,1)] = 0   (first kitchen tile)
-        #   pos_to_index[(1,2)] = 1   (second kitchen tile)
-        #   ... and so on
+        # Indices 0 to num_cleanable-1: cleanable tiles
+        # Index num_cleanable: charger position (always at CHARGER_ROW, CHARGER_COL)
         self.pos_to_index = {}     # (row, col) -> integer index
         self.index_to_pos = {}     # integer index -> (row, col)
         for idx, (row, col) in enumerate(self.cleanable_tiles):
             self.pos_to_index[(row, col)] = idx
             self.index_to_pos[idx] = (row, col)
+        # Add charger as last index
+        self.pos_to_index[(CHARGER_ROW, CHARGER_COL)] = self.num_cleanable
+        self.index_to_pos[self.num_cleanable] = (CHARGER_ROW, CHARGER_COL)
         
         # ======================================================================
         # OBSERVATION SPACE DEFINITION (Position + Dirt + History + DNUT)
@@ -307,28 +357,33 @@ class CleaningEnv(gym.Env):
         # State = position + is_dirty + came_from_direction + dnut_direction
         #
         # Components:
-        # - position: Which tile robot is on (0-22 = 23 positions)
-        # - is_dirty: Current tile dirt status (0 or 1)
+        # - position: Which tile robot is on (0-108 = 109 positions, incl charger)
+        # - is_dirty: Current tile dirt status (0 or 1; charger always 0)
         # - came_from: Direction robot just came from (0-4: N/S/E/W/none)
-        # - dnut: Relative direction to nearest dirty tile (0-9)
+        # - dnut: Relative direction to target (0-9):
         #         0-8 = (dx+1)*3 + (dy+1) where dx,dy ∈ {-1,0,+1}
-        #         9   = no dirty tiles remain
+        #         9   = at destination (no dirty tiles + at charger, or all dirty found)
         #
-        # Total: 23 positions × 2 dirt × 5 directions × 10 DNUT = 2300 states
+        # Total: (num_cleanable+1) × 2 × 5 × 10 = 109 × 2 × 5 × 10 = 10,900 states
         
         self.num_directions = 5   # N, S, E, W, none
-        self.num_dnut = 10        # 3×3 direction grid + none
-        self.state_space_size = self.num_cleanable * 2 * self.num_directions * self.num_dnut  # 2300 states
+        self.num_dnut = 10        # 3×3 direction grid + at_destination
+        self.state_space_size = (self.num_cleanable + 1) * 2 * self.num_directions * self.num_dnut
         self.observation_space = spaces.Discrete(self.state_space_size)
         
         # ======================================================================
-        # ROOM REWARD MAPPING
+        # ROOM REWARD MAPPING (8 rooms + hallway)
         # ======================================================================
         # Different rewards for cleaning different room types
-        # Kitchen pays the most, hallway the least (priority-based)
         self.room_rewards = {
             KITCHEN: REWARD_CLEAN_KITCHEN,
             LIVING_ROOM: REWARD_CLEAN_LIVING,
+            BEDROOM: REWARD_CLEAN_BEDROOM,
+            DINING: REWARD_CLEAN_DINING,
+            LAUNDRY: REWARD_CLEAN_LAUNDRY,
+            OFFICE: REWARD_CLEAN_OFFICE,
+            BATHROOM: REWARD_CLEAN_BATHROOM,
+            GARAGE: REWARD_CLEAN_GARAGE,
             HALLWAY: REWARD_CLEAN_HALLWAY
         }
         
@@ -339,184 +394,266 @@ class CleaningEnv(gym.Env):
             EMPTY: "Wall",
             KITCHEN: "Kitchen",
             LIVING_ROOM: "Living Room",
-            HALLWAY: "Hallway"
+            BEDROOM: "Bedroom",
+            DINING: "Dining Room",
+            BATHROOM: "Bathroom",
+            GARAGE: "Garage",
+            LAUNDRY: "Laundry Room",
+            OFFICE: "Office",
+            HALLWAY: "Hallway",
+            CHARGER: "Charger"
         }
         
         # ======================================================================
         # STATE VARIABLES (will be initialized in reset())
         # ======================================================================
-        self.robot_row = 0        # Robot's current row position
-        self.robot_col = 0        # Robot's current column position
+        self.robot_row = CHARGER_ROW  # Robot starts at charger
+        self.robot_col = CHARGER_COL
         self.dirt_map = None      # 2D array tracking dirty status of each tile
         self.steps_taken = 0      # Number of steps in current episode
         self.tiles_cleaned = 0    # Number of tiles cleaned this episode
-        self.max_steps = 300      # Maximum steps per episode (prevents infinite)
+        self.max_steps = 600      # Maximum steps per episode (larger house needs more)
         self.last_direction = 4   # Direction we came from (0=N, 1=S, 2=E, 3=W, 4=none)
+        self.all_cleaned_bonus_given = False  # Track if all-clean bonus given
         
         # ======================================================================
         # PRINT INITIALIZATION INFO
         # ======================================================================
-        print("=" * 65)
-        print("  CLEANING ROBOT ENVIRONMENT INITIALIZED (Pure Q-Learning)")
-        print("=" * 65)
+        print("=" * 73)
+        print("  CLEANING ROBOT ENVIRONMENT INITIALIZED (Beautiful Home + Charger)")
+        print("=" * 73)
         print(f"  Grid size:          {GRID_WIDTH} × {GRID_HEIGHT}")
         print(f"  Cleanable tiles:    {self.num_cleanable}")
         print(f"  State space size:   {self.state_space_size} states")
         print(f"  Action space size:  {NUM_ACTIONS} actions")
         print(f"  Max steps/episode:  {self.max_steps}")
-        print("-" * 65)
+        print(f"  Charging station:   ({CHARGER_ROW}, {CHARGER_COL})")
+        print("-" * 73)
         print("  Room Cleaning Rewards (dirty tiles only):")
         print(f"    Kitchen:     +{REWARD_CLEAN_KITCHEN} points")
         print(f"    Living Room: +{REWARD_CLEAN_LIVING} points")
+        print(f"    Bedroom:     +{REWARD_CLEAN_BEDROOM} points")
+        print(f"    Dining:      +{REWARD_CLEAN_DINING} points")
+        print(f"    Laundry:     +{REWARD_CLEAN_LAUNDRY} points")
+        print(f"    Office:      +{REWARD_CLEAN_OFFICE} points")
+        print(f"    Bathroom:    +{REWARD_CLEAN_BATHROOM} points")
+        print(f"    Garage:      +{REWARD_CLEAN_GARAGE} points")
         print(f"    Hallway:     +{REWARD_CLEAN_HALLWAY} points")
-        print(f"    Clean tile:  {REWARD_STEP_ON_CLEAN} penalty (step)")
-        print(f"    All Clean:   +{REWARD_ALL_CLEAN_BONUS} bonus")
-        print(f"  DNUT feature:   enabled (10 direction bins)")
-        print("=" * 65)
+        print(f"    All Cleaned: +{REWARD_ALL_CLEAN_BONUS} bonus")
+        print(f"    At Charger:  +{REWARD_RETURN_CHARGER} final bonus")
+        print(f"  DNUT feature:   dual-purpose (dirty tiles / charger)  (10 bins)")
+        print("=" * 73)
+    
+    def _precompute_door_window_cells(self):
+        """
+        Precompute cells for rendering windows and door frames.
+        
+        Windows: outer-wall cells with adjacent walkable rooms
+        Doors: shared edges between hallway cells and room cells
+        
+        These are computed after room_layout is created.
+        """
+        # Will be populated after _create_room_layout()
+        pass
     
     def _create_room_layout(self):
         """
-        Create the house layout as a 2D numpy array.
+        Create the 18×12 beautiful house layout with 8 rooms + charger.
         
-        This method defines which cells belong to which room type.
-        The layout is hardcoded for this simulation but could be
-        modified for different house configurations.
-        
-        Returns:
-        --------
+        Returns
+        -------
         numpy.ndarray
-            2D array of shape (GRID_HEIGHT, GRID_WIDTH) containing
-            room type identifiers (EMPTY, KITCHEN, LIVING_ROOM, HALLWAY)
-        
-        Layout Visualization:
-        --------------------
-        Row 0: All walls (boundary)
-        Row 1: Wall | Kitchen (3 tiles) | Wall | Living (2 tiles) | Wall
-        Row 2: Wall | Kitchen (3 tiles) | Hall | Living (2 tiles) | Wall
-        Row 3: Wall | Kitchen (3 tiles) | Hall | Living (2 tiles) | Wall
-        Row 4: Wall | Hallway (6 tiles connecting both rooms)      | Wall
-        Row 5: All walls (boundary)
-        
-        This layout creates an interesting navigation challenge:
-        - Kitchen and Living Room are separated by a wall
-        - Hallway connects both rooms
-        - Robot must learn to navigate through hallway
+            2D array of shape (GRID_HEIGHT, GRID_WIDTH) containing room type IDs.
         """
         # Initialize grid with all walls (EMPTY)
         layout = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.int32)
         
         # ======================================================================
-        # KITCHEN: 3×3 area in top-left corner (9 tiles)
+        # TOP FLOOR - KITCHEN, BEDROOM, LIVING ROOM
         # ======================================================================
-        # Kitchen is the highest priority room for cleaning (+50 per tile)
-        # Located at rows 1-3, columns 1-3
-        for row in range(1, 4):      # Rows 1, 2, 3
-            for col in range(1, 4):  # Columns 1, 2, 3
+        
+        # Kitchen: rows 1-3, cols 1-3 (9 tiles, +50 each)
+        for row in range(1, 4):
+            for col in range(1, 4):
                 layout[row][col] = KITCHEN
         
-        # ======================================================================
-        # LIVING ROOM: 3×2 area in top-right corner (6 tiles)
-        # ======================================================================
-        # Living room has medium priority for cleaning (+35 per tile)
-        # Located at rows 1-3, columns 5-6
-        for row in range(1, 4):      # Rows 1, 2, 3
-            for col in range(5, 7):  # Columns 5, 6
+        # Bedroom: rows 1-3, cols 5-8 (12 tiles, +40 each)
+        for row in range(1, 4):
+            for col in range(5, 9):
+                layout[row][col] = BEDROOM
+        
+        # Living Room: rows 1-3, cols 11-14 (12 tiles, +45 each)
+        for row in range(1, 4):
+            for col in range(11, 15):
                 layout[row][col] = LIVING_ROOM
         
         # ======================================================================
-        # HALLWAY: Connecting corridor (8 tiles total)
+        # MIDDLE FLOOR - HALLWAYS, BATHROOM, DINING
         # ======================================================================
-        # Hallway connects the kitchen and living room (+20 per tile)
-        # 
-        # Vertical connection piece (allows access from rooms to main hallway):
-        layout[2][4] = HALLWAY  # Row 2, Col 4 - connects to both rooms
-        layout[3][4] = HALLWAY  # Row 3, Col 4 - connects to both rooms
         
-        # Horizontal main hallway (bottom strip connecting entire house):
-        for col in range(1, 7):      # Columns 1 through 6
+        # Top Hallway: row 4, cols 1-14 (14 tiles, +15 each)
+        for col in range(1, 15):
             layout[4][col] = HALLWAY
+        
+        # Bathroom: rows 5-6, cols 1-3 (6 tiles, +25 each)
+        for row in range(5, 7):
+            for col in range(1, 4):
+                layout[row][col] = BATHROOM
+        
+        # Middle Hallway: rows 5-6, cols 5-8 (8 tiles, +15 each)
+        for row in range(5, 7):
+            for col in range(5, 9):
+                layout[row][col] = HALLWAY
+        
+        # Dining Room: rows 5-6, cols 11-13 (6 tiles, +35 each)
+        for row in range(5, 7):
+            for col in range(11, 14):
+                layout[row][col] = DINING
+        
+        # ======================================================================
+        # BOTTOM FLOOR - GARAGE, LAUNDRY, OFFICE, HALLWAYS
+        # ======================================================================
+        
+        # Bottom Hallway: row 7, cols 1-14 (14 tiles, +15 each)
+        for col in range(1, 15):
+            layout[7][col] = HALLWAY
+        
+        # Garage: rows 8-10, cols 1-3 (9 tiles, +20 each)
+        for row in range(8, 11):
+            for col in range(1, 4):
+                layout[row][col] = GARAGE
+        
+        # Laundry Room: rows 8-10, cols 5-7 (9 tiles, +30 each)
+        for row in range(8, 11):
+            for col in range(5, 8):
+                layout[row][col] = LAUNDRY
+        
+        # Charging Station: row 8, col 9 (1 cell, NOT cleanable, walkable)
+        layout[CHARGER_ROW][CHARGER_COL] = CHARGER
+        
+        # Office: rows 8-10, cols 11-13 (9 tiles, +35 each)
+        for row in range(8, 11):
+            for col in range(11, 14):
+                layout[row][col] = OFFICE
+        
+        # ======================================================================
+        # POST-PROCESS: IDENTIFY WINDOWS AND DOORS
+        # ======================================================================
+        
+        # Precompute window cells (outer walls adjacent to rooms)
+        # Windows appear on the boundary (row 0, row 11, col 0, col 17)
+        # only where they border non-EMPTY cells
+        self.window_cells = set()
+        # Top wall (row 0)
+        for col in range(GRID_WIDTH):
+            if layout[1][col] != EMPTY:
+                self.window_cells.add((0, col))
+        # Bottom wall (row 11)
+        for col in range(GRID_WIDTH):
+            if layout[10][col] != EMPTY:
+                self.window_cells.add((11, col))
+        # Left wall (col 0)
+        for row in range(GRID_HEIGHT):
+            if layout[row][1] != EMPTY:
+                self.window_cells.add((row, 0))
+        # Right wall (col 17)
+        for row in range(GRID_HEIGHT):
+            if layout[row][16] != EMPTY:
+                self.window_cells.add((row, 17))
+        
+        # Precompute door edges (boundaries between HALLWAY and other rooms)
+        # These are shared edges that will be drawn as door frames
+        self.door_edges = set()
+        for row in range(GRID_HEIGHT):
+            for col in range(GRID_WIDTH):
+                if layout[row][col] == HALLWAY:
+                    # Check all 4 neighbors
+                    for dr, dc, direction in [(-1,0,'N'), (1,0,'S'), (0,-1,'E'), (0,1,'W')]:
+                        nr, nc = row + dr, col + dc
+                        if 0 <= nr < GRID_HEIGHT and 0 <= nc < GRID_WIDTH:
+                            if layout[nr][nc] not in (EMPTY, HALLWAY, CHARGER):
+                                # This is a door edge
+                                edge = tuple(sorted([(row, col), (nr, nc)]))
+                                self.door_edges.add(edge)
         
         return layout
     
     def _get_nearest_dirty_direction(self):
         """
-        DNUT (Detection of Nearest Uncleaned Tile).
+        DNUT (Dual-purpose Navigation Unit).
         
-        Find the nearest dirty tile by Manhattan distance and return the
-        relative direction as an encoded integer.
+        Direction to nearest thing-to-seek:
+        - While dirty tiles exist: direction to nearest dirty tile
+        - When all clean: direction to charger
+        - At charger with all clean: return 9 ("done" / "at destination")
         
-        Returns:
-        --------
+        Returns
+        -------
         int
             0-8: encoded direction (dx+1)*3 + (dy+1) where dx, dy ∈ {-1,0,+1}
-            9:   no dirty tiles remain
+            9  : at destination (no dirty tiles + at charger, or door reached)
         """
+        # First check if all tiles are clean
+        dirty_count = 0
         best_dist = float('inf')
         best_dr, best_dc = 0, 0
         
         for row, col in self.cleanable_tiles:
             if self.dirt_map[row][col] == DIRTY:
+                dirty_count += 1
                 dist = abs(row - self.robot_row) + abs(col - self.robot_col)
                 if dist < best_dist:
                     best_dist = dist
                     best_dr = row - self.robot_row
                     best_dc = col - self.robot_col
         
-        if best_dist == float('inf'):
-            # No dirty tiles left
+        # If dirty tiles remain, point to nearest dirty
+        if dirty_count > 0:
+            dx = (best_dr > 0) - (best_dr < 0)
+            dy = (best_dc > 0) - (best_dc < 0)
+            return (dx + 1) * 3 + (dy + 1)
+        
+        # All tiles clean: point toward charger
+        # If robot is AT charger, return 9 ("done")
+        if self.robot_row == CHARGER_ROW and self.robot_col == CHARGER_COL:
             return 9
         
-        # Convert to sign: -1, 0, +1
-        dx = (best_dr > 0) - (best_dr < 0)
-        dy = (best_dc > 0) - (best_dc < 0)
-        
+        # Point toward charger
+        dr = CHARGER_ROW - self.robot_row
+        dc = CHARGER_COL - self.robot_col
+        dx = (dr > 0) - (dr < 0)
+        dy = (dc > 0) - (dc < 0)
         return (dx + 1) * 3 + (dy + 1)
     
     def _get_state(self):
         """
-        Convert current environment state to a single integer for Q-table lookup.
+        Convert current environment state to a single integer for Q-table.
         
-        STATE REPRESENTATION (Position + Dirt + Movement History + DNUT):
+        State = pos_index + is_dirty*(num_cleanable+1) + came_from*2*(num_cleanable+1) + dnut*10*2*(num_cleanable+1)
         
-        Components combined:
-        1. position: Which tile (0-22)
-        2. is_dirty: Current tile status (0 or 1)
-        3. came_from: Direction robot just came from (0-4)
-           - 0: Came from North (moved South to get here)
-           - 1: Came from South (moved North to get here)
-           - 2: Came from East (moved West to get here)
-           - 3: Came from West (moved East to get here)
-           - 4: No movement yet (start of episode)
-        4. dnut: Relative direction to nearest dirty tile (0-9)
-           - 0-8: (dx+1)*3 + (dy+1) directional encoding
-           - 9: no dirty tiles remain
-        
-        Formula: state = pos + is_dirty*23 + came_from*46 + dnut*230
-        Total: 2300 states (23 × 2 × 5 × 10)
-        
-        Returns:
-        --------
+        Returns
+        -------
         int
-            State index for the Q-table (0 to 2299)
+            State index for the Q-table (0 to state_space_size-1)
         """
-        # Get position index (0 to 22)
+        # Position index (0 to num_cleanable, inc. charger)
         pos_index = self.pos_to_index.get((self.robot_row, self.robot_col), 0)
         
-        # Get dirt status of current tile (0 = clean, 1 = dirty)
+        # Dirt status of current tile
         is_dirty = 1 if self.dirt_map[self.robot_row][self.robot_col] == DIRTY else 0
         
-        # Get the direction we came from (set by step() after each move)
+        # Direction we came from
         came_from = self.last_direction
         
-        # Get DNUT direction to nearest dirty tile
+        # Direction to nearest seek target (dirty or charger)
         dnut = self._get_nearest_dirty_direction()
         
-        # Encode as single integer:
-        # Each component contributes to non-overlapping ranges
+        # Encode as single integer
+        n_pos = self.num_cleanable + 1
         state = (pos_index
-                 + is_dirty * self.num_cleanable
-                 + came_from * self.num_cleanable * 2
-                 + dnut * self.num_cleanable * 2 * self.num_directions)
+                 + is_dirty * n_pos
+                 + came_from * 2 * n_pos
+                 + dnut * self.num_directions * 2 * n_pos)
         
         return int(state)
     
@@ -524,21 +661,18 @@ class CleaningEnv(gym.Env):
         """
         Calculate a 3-bit encoding of which rooms have dirty tiles.
         
-        Returns:
-        --------
+        Returns
+        -------
         int
             Value 0-7 representing room dirty status
-            - Bit 0 (value 1): Kitchen has dirty tiles
-            - Bit 1 (value 2): Living room has dirty tiles
-            - Bit 2 (value 4): Hallway has dirty tiles
-            
-        Examples:
-        ---------
-        - 0 = No rooms have dirty tiles (all clean!)
-        - 1 = Only kitchen has dirty tiles
-        - 3 = Kitchen and living room have dirty tiles
-        - 7 = All rooms have dirty tiles
         """
+        combo = 0
+        
+        # Check each room for dirty tiles
+        kitchen_dirty = False
+        living_dirty = False
+        hallway_dirty = False
+        
         combo = 0
         
         # Check each room for dirty tiles
@@ -620,21 +754,18 @@ class CleaningEnv(gym.Env):
         """
         Reset the environment to start a new episode.
         
-        This method is called at the start of each training/testing episode.
-        It:
-        1. Resets step counter and tiles cleaned counter
-        2. Places robot at starting position (center of hallway)
-        3. Makes all tiles dirty (fresh start)
+        Robot starts at the CHARGING STATION and must return there after
+        cleaning all tiles to complete the task fully.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         seed : int or None
-            Random seed for reproducibility (passed to parent class)
+            Random seed for reproducibility
         options : dict or None
-            Additional reset options (not used in this implementation)
+            Additional reset options (not used)
         
-        Returns:
-        --------
+        Returns
+        -------
         tuple (observation, info)
             observation : int
                 Initial state observation
@@ -647,21 +778,19 @@ class CleaningEnv(gym.Env):
         # Reset episode tracking variables
         self.steps_taken = 0
         self.tiles_cleaned = 0
+        self.all_cleaned_bonus_given = False
         
         # ======================================================================
-        # PLACE ROBOT AT STARTING POSITION
+        # PLACE ROBOT AT CHARGING STATION
         # ======================================================================
-        # Start in the center of the bottom hallway strip
-        # This gives the robot roughly equal access to all rooms
-        # Position (row=4, col=3) is in the middle of the hallway
-        self.robot_row = 4
-        self.robot_col = 3
+        # Robot starts and must return to the charging station docking area
+        self.robot_row = CHARGER_ROW
+        self.robot_col = CHARGER_COL
         
         # ======================================================================
         # INITIALIZE DIRT MAP - ALL TILES START DIRTY
         # ======================================================================
         # Create a fresh dirt map where all cleanable tiles are dirty
-        # This represents a house that needs complete cleaning
         self.dirt_map = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.int32)
         for row, col in self.cleanable_tiles:
             self.dirt_map[row][col] = DIRTY
@@ -677,6 +806,7 @@ class CleaningEnv(gym.Env):
             "robot_position": (self.robot_row, self.robot_col),
             "dirty_tiles": self._count_dirty_tiles(),
             "tiles_cleaned": 0,
+            "phase": "CLEANING",
             "room": self.room_names.get(
                 self.room_layout[self.robot_row][self.robot_col], "Unknown"
             )
@@ -835,12 +965,19 @@ class CleaningEnv(gym.Env):
         # Count remaining dirty tiles
         dirty_remaining = self._count_dirty_tiles()
         
-        # Episode terminates successfully if all tiles are clean
+        # Episode terminates successfully ONLY if:
+        # 1. All tiles are clean AND
+        # 2. Robot is at the charging station
         terminated = False
-        if dirty_remaining == 0:
-            # Big bonus for completing the task!
+        if dirty_remaining == 0 and not self.all_cleaned_bonus_given:
+            # Give all-clean bonus once
             reward += REWARD_ALL_CLEAN_BONUS
-            terminated = True
+            self.all_cleaned_bonus_given = True
+            
+            # Check if robot is also at charger for FULL completion
+            if self.robot_row == CHARGER_ROW and self.robot_col == CHARGER_COL:
+                reward += REWARD_RETURN_CHARGER
+                terminated = True
         
         # Episode is truncated if max steps reached (time limit)
         truncated = (self.steps_taken >= self.max_steps)
@@ -857,6 +994,9 @@ class CleaningEnv(gym.Env):
         
         # Calculate completion rate as percentage
         completion_rate = (self.tiles_cleaned / self.num_cleanable * 100) if self.num_cleanable > 0 else 0.0
+        
+        # Determine phase
+        phase = "CLEANING" if dirty_remaining > 0 else "🏠 RETURNING TO CHARGER"
         
         info = {
             "robot_position": (self.robot_row, self.robot_col),
@@ -903,12 +1043,12 @@ class CleaningEnv(gym.Env):
             pygame.display.init()
             
             # Calculate window size (grid + space for stats panel)
-            window_width = GRID_WIDTH * self.cell_size
-            window_height = GRID_HEIGHT * self.cell_size + 80  # Extra for stats
+            window_width = GRID_WIDTH * CELL_SIZE
+            window_height = GRID_HEIGHT * CELL_SIZE + 100  # Extra for stats
             
             if self.render_mode == "human":
                 # Create visible window for human viewing
-                pygame.display.set_caption("Cleaning Robot - Pure Q-Learning")
+                pygame.display.set_caption("Cleaning Robot - Beautiful Home with Charging Station")
                 self.window = pygame.display.set_mode((window_width, window_height))
             else:
                 # Create off-screen surface for rgb_array mode
@@ -918,29 +1058,36 @@ class CleaningEnv(gym.Env):
             self.clock = pygame.time.Clock()
             
             # Initialize fonts for text rendering
-            self.font = pygame.font.Font(None, 28)
-            self.small_font = pygame.font.Font(None, 22)
+            self.font = pygame.font.Font(None, 20)
+            self.small_font = pygame.font.Font(None, 16)
         
         # ======================================================================
         # DRAW BACKGROUND AND GRID
         # ======================================================================
         self.window.fill(COLOR_WALL)  # Fill with wall color as background
         
-        # Map room types to colors
+        # Map room types to colors (updated for 8 rooms)
         room_colors = {
             EMPTY: COLOR_WALL,
             KITCHEN: COLOR_KITCHEN,
             LIVING_ROOM: COLOR_LIVING_ROOM,
-            HALLWAY: COLOR_HALLWAY
+            BEDROOM: COLOR_BEDROOM,
+            DINING: COLOR_DINING,
+            BATHROOM: COLOR_BATHROOM,
+            GARAGE: COLOR_GARAGE,
+            LAUNDRY: COLOR_LAUNDRY,
+            OFFICE: COLOR_OFFICE,
+            HALLWAY: COLOR_HALLWAY,
+            CHARGER: COLOR_CHARGER
         }
         
         # Draw each cell in the grid
         for row in range(GRID_HEIGHT):
             for col in range(GRID_WIDTH):
                 # Calculate cell rectangle position
-                x = col * self.cell_size
-                y = row * self.cell_size
-                cell_rect = pygame.Rect(x, y, self.cell_size, self.cell_size)
+                x = col * CELL_SIZE
+                y = row * CELL_SIZE
+                cell_rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
                 
                 # Get room type and corresponding color
                 room_type = self.room_layout[row][col]
@@ -949,56 +1096,82 @@ class CleaningEnv(gym.Env):
                 # Draw cell background
                 pygame.draw.rect(self.window, base_color, cell_rect)
                 
-                # Draw dirt or clean markers for room tiles (not walls)
-                if room_type != EMPTY and self.dirt_map is not None:
+                # Draw windows on outer wall cells with adjacent rooms
+                if room_type == EMPTY and (row, col) in self.window_cells:
+                    # Light blue glass with white panes
+                    pygame.draw.rect(self.window, COLOR_WINDOW_GLASS, cell_rect)
+                    # Draw window panes (cross pattern)
+                    center_x = x + CELL_SIZE // 2
+                    center_y = y + CELL_SIZE // 2
+                    pygame.draw.line(self.window, (255, 255, 255), (center_x, y + 5), (center_x, y + CELL_SIZE - 5), 2)
+                    pygame.draw.line(self.window, (255, 255, 255), (x + 5, center_y), (x + CELL_SIZE - 5, center_y), 2)
+                
+                # Draw dirt or clean markers for room tiles (not walls, not charger base)
+                if room_type not in (EMPTY, CHARGER) and self.dirt_map is not None:
                     if self.dirt_map[row][col] == DIRTY:
-                        # Draw brown dirt spots to indicate dirty tile
-                        center_x = x + self.cell_size // 2
-                        center_y = y + self.cell_size // 2
-                        # Draw multiple dirt spots in a pattern
-                        dirt_positions = [(-15, -10), (10, -5), (-5, 15), (15, 10), (0, 0)]
+                        # Draw brown dirt spots
+                        center_x = x + CELL_SIZE // 2
+                        center_y = y + CELL_SIZE // 2
+                        dirt_radius = max(3, CELL_SIZE // 12)
+                        dirt_positions = [(-CELL_SIZE//8, -CELL_SIZE//10), (CELL_SIZE//9, -CELL_SIZE//12), 
+                                         (-CELL_SIZE//10, CELL_SIZE//9), (CELL_SIZE//8, CELL_SIZE//10), (0, 0)]
                         for dx, dy in dirt_positions:
-                            pygame.draw.circle(
-                                self.window, COLOR_DIRTY,
-                                (center_x + dx, center_y + dy), 8
-                            )
+                            pygame.draw.circle(self.window, COLOR_DIRTY, (center_x + dx, center_y + dy), dirt_radius)
                     else:
-                        # Draw green checkmark to indicate cleaned tile
-                        center_x = x + self.cell_size // 2
-                        center_y = y + self.cell_size // 2
-                        # Draw checkmark circle
-                        pygame.draw.circle(
-                            self.window, COLOR_CLEAN_MARKER,
-                            (center_x, center_y), 15
-                        )
-                        # Draw check symbol inside
-                        pygame.draw.lines(
-                            self.window, (255, 255, 255), False,
-                            [
-                                (center_x - 8, center_y),
-                                (center_x - 2, center_y + 8),
-                                (center_x + 10, center_y - 8)
-                            ], 3
-                        )
+                        # Draw green checkmark for cleaned tile
+                        center_x = x + CELL_SIZE // 2
+                        center_y = y + CELL_SIZE // 2
+                        check_radius = max(5, CELL_SIZE // 10)
+                        pygame.draw.circle(self.window, COLOR_CLEAN_MARKER, (center_x, center_y), check_radius)
+                        # Draw check symbol
+                        check_size = max(3, CELL_SIZE // 15)
+                        pygame.draw.lines(self.window, (255, 255, 255), False,
+                            [(center_x - check_size, center_y), 
+                             (center_x - check_size//2, center_y + check_size), 
+                             (center_x + check_size, center_y - check_size)], 2)
+                
+                # Draw door frames at hallway boundaries (thin brown stripe)
+                # This is cosmetic only - doors are always passable
                 
                 # Draw grid lines
-                pygame.draw.rect(self.window, COLOR_GRID_LINE, cell_rect, 2)
+                pygame.draw.rect(self.window, COLOR_GRID_LINE, cell_rect, 1)
+        
+        # ======================================================================
+        # DRAW CHARGER ICON
+        # ======================================================================
+        # Draw lightning bolt at charger location
+        charger_x = CHARGER_COL * CELL_SIZE + CELL_SIZE // 2
+        charger_y = CHARGER_ROW * CELL_SIZE + CELL_SIZE // 2
+        bolt_size = max(8, CELL_SIZE // 8)
+        # Draw lightning bolt as a simple polygon
+        pygame.draw.polygon(self.window, COLOR_LIGHTNING, [
+            (charger_x, charger_y - bolt_size),
+            (charger_x - bolt_size // 2, charger_y - bolt_size // 3),
+            (charger_x - bolt_size // 3, charger_y),
+            (charger_x + bolt_size // 2, charger_y - bolt_size // 4),
+            (charger_x + bolt_size // 4, charger_y + bolt_size),
+            (charger_x, charger_y + bolt_size // 2)
+        ])
         
         # ======================================================================
         # DRAW ROBOT
         # ======================================================================
         # Calculate robot center position
-        robot_x = self.robot_col * self.cell_size + self.cell_size // 2
-        robot_y = self.robot_row * self.cell_size + self.cell_size // 2
-        robot_radius = self.cell_size // 3
+        robot_x = self.robot_col * CELL_SIZE + CELL_SIZE // 2
+        robot_y = self.robot_row * CELL_SIZE + CELL_SIZE // 2
+        robot_radius = max(8, CELL_SIZE // 4)
+        
+        # Draw golden halo if robot is at charger
+        if self.robot_row == CHARGER_ROW and self.robot_col == CHARGER_COL:
+            pygame.draw.circle(self.window, COLOR_ROBOT_HALO, (robot_x, robot_y), robot_radius + 5, 3)
         
         # Draw robot body (green circle)
         pygame.draw.circle(self.window, COLOR_ROBOT, (robot_x, robot_y), robot_radius)
         # Draw robot outline
-        pygame.draw.circle(self.window, (30, 100, 30), (robot_x, robot_y), robot_radius, 3)
+        pygame.draw.circle(self.window, (30, 100, 30), (robot_x, robot_y), robot_radius, 2)
         
         # Draw robot eyes (to give it character and show direction)
-        eye_size = 8
+        eye_size = max(3, robot_radius // 3)
         eye_offset_x = robot_radius // 3
         eye_offset_y = robot_radius // 4
         # White part of eyes
@@ -1015,7 +1188,7 @@ class CleaningEnv(gym.Env):
         # ======================================================================
         # DRAW STATISTICS PANEL
         # ======================================================================
-        stats_y = GRID_HEIGHT * self.cell_size + 10
+        stats_y = GRID_HEIGHT * CELL_SIZE + 10
         
         # Calculate current statistics
         dirty_count = self._count_dirty_tiles() if self.dirt_map is not None else 0
@@ -1024,29 +1197,36 @@ class CleaningEnv(gym.Env):
             self.room_layout[self.robot_row][self.robot_col], "Unknown"
         )
         
+        # Determine phase
+        phase = "CLEANING" if dirty_count > 0 else "🏠 RETURN TO CHARGER ⚡"
+        
         # Draw main stats line
-        stats_text = (f"Room: {current_room} | "
+        stats_text = (f"Phase: {phase} | Room: {current_room} | "
                      f"Steps: {self.steps_taken}/{self.max_steps} | "
                      f"Cleaned: {self.tiles_cleaned}/{self.num_cleanable} | "
                      f"Progress: {completion_pct:.0f}%")
         text_surface = self.font.render(stats_text, True, COLOR_TEXT)
         self.window.blit(text_surface, (10, stats_y))
         
-        # Draw legend line
-        legend_y = stats_y + 30
-        legend_text = "Kitchen (+50) | Living (+35) | Hallway (+20)"
+        # Draw legend line with all room types and rewards
+        legend_y = stats_y + 28
+        legend_text = ("Kitchen(+50) Living(+45) Bed(+40) Dine(+35) Office(+35) Laund(+30) "
+                      "Bath(+25) Garage(+20) Hall(+15)")
         legend_surface = self.small_font.render(legend_text, True, COLOR_TEXT)
         self.window.blit(legend_surface, (10, legend_y))
         
-        # Draw color legend boxes
+        # Draw color legend boxes (first 5 rooms)
         legend_items = [
-            (450, "Kitchen", COLOR_KITCHEN),
-            (530, "Living", COLOR_LIVING_ROOM),
-            (600, "Hall", COLOR_HALLWAY),
+            (10, "K", COLOR_KITCHEN),
+            (40, "L", COLOR_LIVING_ROOM),
+            (70, "B", COLOR_BEDROOM),
+            (100, "D", COLOR_DINING),
+            (130, "O", COLOR_OFFICE),
         ]
-        for x_pos, name, color in legend_items:
-            pygame.draw.rect(self.window, color, (x_pos, legend_y, 20, 20))
-            pygame.draw.rect(self.window, COLOR_BLACK, (x_pos, legend_y, 20, 20), 1)
+        for x_pos, label, color in legend_items:
+            box_size = 10
+            pygame.draw.rect(self.window, color, (x_pos, legend_y - 18, box_size, box_size))
+            pygame.draw.rect(self.window, COLOR_BLACK, (x_pos, legend_y - 18, box_size, box_size), 1)
         
         # ======================================================================
         # UPDATE DISPLAY
@@ -1133,6 +1313,24 @@ if __name__ == "__main__":
     # Create environment with human rendering
     print("\n1. Creating environment with render_mode='human'...")
     env = CleaningEnv(render_mode="human")
+    
+    # Test reset
+    print("\n2. Testing reset()...")
+    observation, info = env.reset()
+    print(f"   Initial observation shape: {observation}")
+    print(f"   Initial info: {info}")
+    
+    # Test a few steps
+    print("\n3. Testing step() function...")
+    for step in range(5):
+        action = env.action_space.sample()
+        observation, reward, terminated, truncated, info = env.step(action)
+        print(f"   Step {step}: Action={action}, Reward={reward}, Done={terminated}")
+    
+    # Close environment
+    env.close()
+    print("\n✓ Environment test completed successfully!")
+    print("=" * 65 + "\n")
     
     # Test reset
     print("\n2. Testing reset()...")

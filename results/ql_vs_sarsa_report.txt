@@ -1,0 +1,50 @@
+================================================================================
+Q-LEARNING vs SARSA - COMPREHENSIVE ANALYSIS REPORT
+================================================================================
+
+Generated: 2026-03-12 22:01:03
+Episodes Trained: 2000
+
+KEY FINDINGS
+--------------------------------------------------------------------------------
+
+Q-LEARNING PERFORMANCE:
+  • Final Average Reward (last 100 episodes): 698.00
+  • Final Success Rate: 0.0%
+  • Total Successful Episodes: 0/2000
+  • Best Single Episode Reward: 852.00
+  • Average Episode Length (last 100): 600.0 steps
+
+SARSA PERFORMANCE:
+  • Final Average Reward (last 100 episodes): 583.99
+  • Final Success Rate: 0.0%
+  • Total Successful Episodes: 0/2000
+  • Best Single Episode Reward: 911.00
+  • Average Episode Length (last 100): 600.0 steps
+
+ALGORITHM COMPARISON:
+--------------------------------------------------------------------------------
+
+Reward Difference: +114.01 (Q-Learning better)
+Success Rate Difference: +0.0% (Q-Learning worse)
+
+INSIGHTS:
+--------------------------------------------------------------------------------
+1. Q-LEARNING (OFF-POLICY):
+   - Learns the optimal policy while exploring
+   - Updates use the maximum Q-value of next state
+   - Generally converges faster
+   - May be more aggressive in learning
+
+2. SARSA (ON-POLICY):
+   - Learns the value of its exploratory policy
+   - Updates use the actual next action chosen
+   - More conservative approach
+   - Better for environments with penalties
+
+CONCLUSION:
+--------------------------------------------------------------------------------
+Q-Learning achieved better reward performance.
+This suggests the environment benefits from aggressive learning.
+
+================================================================================

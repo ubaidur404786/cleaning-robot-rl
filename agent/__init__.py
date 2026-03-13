@@ -7,4 +7,5 @@
 
 from agent.q_learning_agent import QLearningAgent
 from agent.sarsa_agent import SarsaAgent
-from agent.dqn_agent import DQNAgent
+# DQN requires torch and can be slow to import - import directly if needed
+# from agent.dqn_agent import DQNAgent
