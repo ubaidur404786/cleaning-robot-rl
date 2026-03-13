@@ -54,7 +54,7 @@ This project implements a complete Reinforcement Learning pipeline around a cust
 - The robot receives **no hardcoded rules** — it learns entirely from the reward signal.
 - A **DNUT compass** (Detection of Nearest Uncleaned Tile) is embedded in the state, giving the agent a relative direction hint to the closest dirty tile, but the robot still has to learn how to use it.
 - **Pygame** renders the live cleaning visually; **Matplotlib** generates all comparison charts.
-- Code was developed with the assistance of AI code generation tools (**partially vibe coded**).
+
 
 ---
 
