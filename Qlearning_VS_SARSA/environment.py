@@ -1,19 +1,7 @@
-"""
-Cleaning Robot Environment.
-
-A Roomba-style vacuum robot that cleans automatically as it moves.
-The robot must learn WHERE to go and WHEN to recharge — not whether to clean.
-
-State:  (row, col, battery_bin)  — agent does NOT see the dirt grid
-Actions: Up(0), Down(1), Left(2), Right(3), Charge(4)
-
-Phase 1: Simple open 10x10 grid, no walls.
-Phase 2: Realistic apartment with walls, doorways, furniture.
-"""
-
 import numpy as np
 from config import (
     PHASE1_CONFIG, REWARDS, BATTERY_BINS, NUM_ACTIONS, MAX_STEPS_PER_EPISODE,
+    ROOM_DEFINITIONS, DIRT_BURST_CONFIG,
 )
 
 
@@ -40,17 +28,17 @@ class CleaningRobotEnv:
         self.furniture = set(map(tuple, cfg.get("furniture", [])))
         self.dirt_ratio = cfg.get("dirt_ratio", 1.0)
 
-        # Blocked cells = walls + furniture (agent can't step on them)
+        # Blocked cells = walls + furniture 
         self.blocked = self.walls | self.furniture
 
-        # All walkable tiles (excluding blocked cells)
+        # All walkable tiles 
         self.walkable = set()
         for r in range(self.rows):
             for c in range(self.cols):
                 if (r, c) not in self.blocked:
                     self.walkable.add((r, c))
 
-        # Tiles that can be dirty (walkable minus charger)
+        # Tiles that can be dirty
         self.cleanable = self.walkable - {self.charger_pos}
 
         # Movement deltas: Up, Down, Left, Right
@@ -65,7 +53,7 @@ class CleaningRobotEnv:
         self.battery_bins = BATTERY_BINS
         self.max_steps = MAX_STEPS_PER_EPISODE
 
-        # State space size (for Q-table sizing)
+        # State space size
         self.num_states = self.rows * self.cols * self.battery_bins
 
         # Will be set by reset()
@@ -104,7 +92,6 @@ class CleaningRobotEnv:
         self.dirt_grid = np.zeros((self.rows, self.cols), dtype=np.int8)
 
         if self.dirt_ratio >= 1.0:
-            # All cleanable tiles are dirty
             for (r, c) in self.cleanable:
                 self.dirt_grid[r, c] = 1
         else:
@@ -263,3 +250,140 @@ class CleaningRobotEnv:
             f"battery={self.battery}/{self.battery_capacity}, "
             f"cleaned={self.cleaned_count}/{self.total_dirty})"
         )
+
+
+class DirtRegenerationEnv(CleaningRobotEnv):
+    """
+    Extended apartment environment with periodic dirt bursts.
+
+    Each room regenerates dirt at a different rate, simulating real-world
+    usage patterns (kitchen dirtier than storage). The agent must learn —
+    purely from reward signals — to prioritize high-traffic rooms.
+
+    Key differences from CleaningRobotEnv:
+    - Dirt bursts: every N steps per room, a fraction of its tiles re-dirty.
+    - "all_clean" termination is disabled (dirt always comes back).
+    - Coverage tracks cumulative cleans (including re-cleans), not just
+      initial dirty tiles.
+    - Room-level visit tracking for analysis.
+    """
+
+    def __init__(self, config, max_steps=None):
+        """
+        Parameters
+        ----------
+        config : dict
+            Must include 'dirt_burst_config' and 'room_definitions'.
+        max_steps : int, optional
+            Override MAX_STEPS_PER_EPISODE for longer episodes.
+        """
+        super().__init__(config)
+
+        if max_steps is not None:
+            self.max_steps = max_steps
+
+        self.dirt_burst_config = config["dirt_burst_config"]
+        raw_room_defs = config["room_definitions"]
+
+        # Filter room tile lists to only include walkable tiles (no walls/furniture).
+        # Also exclude charger tile  it's never dirty.
+        self.room_tiles = {}
+        for room_name, tile_list in raw_room_defs.items():
+            self.room_tiles[room_name] = [
+                (r, c) for (r, c) in tile_list
+                if (r, c) in self.cleanable
+            ]
+
+        # Tracking: per-room visit counts (reset each episode)
+        self.room_visits = None
+        # Cumulative cleans including re-cleans
+        self.total_cleans = 0
+        # Track how many dirt bursts fired (for analysis)
+        self.burst_log = []
+
+    def reset(self, seed=None):
+        """Reset environment and room-visit tracking."""
+        state = super().reset(seed=seed)
+
+        # Initialize room visit tracking
+        self.room_visits = {room: 0 for room in self.room_tiles}
+        self.total_cleans = 0
+        self.burst_log = []
+
+        return state
+
+    def step(self, action):
+        """
+        Execute action, then check for dirt bursts.
+
+        Returns same (state, reward, done, info) tuple as parent, but info
+        includes additional keys:
+        - 'room_visits': dict of room visit counts this episode
+        - 'total_cleans': cumulative tiles cleaned (including re-cleans)
+        - 'bursts_this_step': list of (room_name, n_re_dirtied)
+        """
+        # --- 1. Execute the normal step ---
+        state, reward, done, info = super().step(action)
+
+        # Track room visits based on current position
+        for room_name, tiles in self.room_tiles.items():
+            if self.agent_pos in tiles:
+                self.room_visits[room_name] += 1
+                break
+
+        # Update cumulative clean count (parent tracks cleaned_count for
+        # initial dirty tiles, but we need to count re-cleans too)
+        if info["event"] == "clean_dirty":
+            self.total_cleans += 1
+
+        # --- 2. Override "all_clean" termination ---
+        # With dirt regen, we never end early because dirt comes back.
+        if info["event"] == "all_clean":
+            self.done = False
+            done = False
+
+        # --- 3. Dirt burst check (only if episode is still running) ---
+        bursts_this_step = []
+        if not done:
+            for room_name, burst_cfg in self.dirt_burst_config.items():
+                interval = burst_cfg["burst_interval"]
+                probability = burst_cfg["burst_probability"]
+                intensity = burst_cfg["burst_intensity"]
+
+                if (self.steps % interval == 0
+                        and np.random.random() < probability):
+                    # Fire a burst: re-dirty a fraction of the room's tiles
+                    room_cleanable = self.room_tiles.get(room_name, [])
+                    if not room_cleanable:
+                        continue
+
+                    # Only re-dirty tiles that are currently clean
+                    clean_tiles = [
+                        (r, c) for (r, c) in room_cleanable
+                        if self.dirt_grid[r, c] == 0
+                    ]
+                    if not clean_tiles:
+                        continue
+
+                    n_to_dirty = max(1, int(len(room_cleanable) * intensity))
+                    n_to_dirty = min(n_to_dirty, len(clean_tiles))
+
+                    chosen = np.random.choice(
+                        len(clean_tiles), size=n_to_dirty, replace=False
+                    )
+                    for idx in chosen:
+                        r, c = clean_tiles[idx]
+                        self.dirt_grid[r, c] = 1
+
+                    bursts_this_step.append((room_name, n_to_dirty))
+
+            if bursts_this_step:
+                self.burst_log.append((self.steps, bursts_this_step))
+
+        # --- 4. Enrich info dict ---
+        info["room_visits"] = dict(self.room_visits)
+        info["total_cleans"] = self.total_cleans
+        info["bursts_this_step"] = bursts_this_step
+        info["current_dirt"] = int(self.dirt_grid.sum())
+
+        return state, reward, done, info

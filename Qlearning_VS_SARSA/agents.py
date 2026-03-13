@@ -1,16 +1,3 @@
-"""
-RL Agents for the Cleaning Robot.
-
-Two algorithms:
-    - Q-Learning (off-policy, optimistic about future — uses max over next actions)
-    - SARSA (on-policy, cautious — uses the action actually taken by the policy)
-
-Three exploration strategies (pluggable into either algorithm):
-    - Epsilon-Greedy: random action with probability ε, greedy otherwise
-    - UCB (Upper Confidence Bound): pick action with highest Q + exploration bonus
-    - Optimistic Initialization: start Q-values high to encourage exploration early
-"""
-
 import numpy as np
 from config import (
     ALPHA, GAMMA,

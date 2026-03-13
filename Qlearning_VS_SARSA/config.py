@@ -90,6 +90,64 @@ PHASE2_CONFIG = {
     "dirt_ratio": 1.0,
 }
 
+# Phase 2 variant: Charger at hallway center (7, 7) instead of corner (0, 0)
+# Same apartment layout, same walls/furniture, same battery.
+# Purpose: test whether a centrally-placed charger improves coverage
+# by giving symmetric access to all rooms.
+PHASE2_HALLWAY_CONFIG = {
+    **PHASE2_CONFIG,
+    "charger_pos": (7, 7),
+    "start_pos": (7, 7),
+}
+
+# =============================================================================
+# Phase 3: Dirt Regeneration (Periodic Bursts)
+# =============================================================================
+
+# Room definitions — which (row, col) tiles belong to each room.
+# These cover ALL tiles in the bounding box (walls/furniture will be filtered
+# out at runtime by the environment, which intersects with its walkable set).
+ROOM_DEFINITIONS = {
+    "living_room": [(r, c) for r in range(0, 6) for c in range(0, 7)],
+    "kitchen":     [(r, c) for r in range(0, 6) for c in range(8, 15)],
+    "hallway":     [(r, c) for r in range(7, 9) for c in range(0, 15)],
+    "bedroom":     [(r, c) for r in range(10, 15) for c in range(0, 7)],
+    "bathroom":    [(r, c) for r in range(10, 15) for c in range(8, 12)],
+    "storage":     [(r, c) for r in range(10, 15) for c in range(13, 15)],
+}
+
+# Dirt burst configuration per room.
+# - burst_interval: every N steps, this room's burst is evaluated
+# - burst_probability: probability that the burst actually fires each interval
+# - burst_intensity: fraction of the room's cleanable tiles that get re-dirtied
+#
+# Rationale:
+#   Kitchen — most frequent (meal prep, spills)
+#   Living room — frequent (high traffic)
+#   Bedroom — moderate (foot traffic morning/evening)
+#   Bathroom — moderate
+#   Hallway — low (transit only)
+#   Storage — rare (seldom entered)
+DIRT_BURST_CONFIG = {
+    "kitchen":     {"burst_interval": 15, "burst_probability": 0.8, "burst_intensity": 0.5},
+    "living_room": {"burst_interval": 20, "burst_probability": 0.7, "burst_intensity": 0.4},
+    "bedroom":     {"burst_interval": 40, "burst_probability": 0.5, "burst_intensity": 0.3},
+    "bathroom":    {"burst_interval": 40, "burst_probability": 0.5, "burst_intensity": 0.3},
+    "hallway":     {"burst_interval": 50, "burst_probability": 0.3, "burst_intensity": 0.2},
+    "storage":     {"burst_interval": 80, "burst_probability": 0.2, "burst_intensity": 0.2},
+}
+
+# Phase 3 environment config (extends the hallway-charger apartment layout)
+DIRT_PATTERN_CONFIG = {
+    **PHASE2_HALLWAY_CONFIG,
+    "dirt_burst_config": DIRT_BURST_CONFIG,
+    "room_definitions": ROOM_DEFINITIONS,
+}
+
+# Training settings for dirt pattern experiments
+DIRT_PATTERN_EPISODES = 15000      # Longer training — non-stationary environment
+DIRT_PATTERN_MAX_STEPS = 800       # Longer episodes — dirt keeps coming back
+
 # Battery discretization bins for state representation
 # e.g., 5 bins: [0-10, 11-20, 21-30, 31-40, 41-50]
 BATTERY_BINS = 5
@@ -107,7 +165,6 @@ REWARDS = {
     "charge_away":        -5.0,   # Charge action away from charger
     "battery_dead":      -50.0,   # Battery reaches 0 (episode ends)
 }
-
 # =============================================================================
 # Agent Hyperparameters
 # =============================================================================
