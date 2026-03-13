@@ -1,91 +1,84 @@
 # 🤖 Cleaning Robot — Reinforcement Learning
 
-A beginner-friendly project that trains a virtual cleaning robot to clean a house using **three different Reinforcement Learning algorithms**: **Q-Learning**, **SARSA**, and **DQN (Deep Q-Network)**. Watch the robot go from completely clueless to a cleaning expert — all through trial and error!
+A Reinforcement Learning project that trains a virtual cleaning robot to navigate a multi-room house and clean all dirty tiles, using **three algorithms**: **Q-Learning**, **SARSA**, and **DQN (Deep Q-Network)**. The robot starts with zero knowledge and learns an optimal cleaning strategy purely through trial and error.
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![Gymnasium](https://img.shields.io/badge/Gymnasium-0.29%2B-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-red)
 ![Pygame](https://img.shields.io/badge/Pygame-2.5%2B-orange)
+![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ---
 
 ## 📖 Table of Contents
 
-- [What Is This Project?](#-what-is-this-project)
-- [What Will You Learn?](#-what-will-you-learn)
-- [The Environment — A House to Clean](#-the-environment--a-house-to-clean)
+- [Project Overview](#-project-overview)
+- [Technology Stack](#-technology-stack)
+- [The Environment](#-the-environment)
   - [House Layout](#house-layout)
-  - [What the Robot Can Do (Actions)](#what-the-robot-can-do-actions)
-  - [How the Robot "Sees" the World (State)](#how-the-robot-sees-the-world-state)
-  - [Rewards & Penalties](#rewards--penalties)
-- [The Algorithms — Three Ways to Learn](#-the-algorithms--three-ways-to-learn)
-  - [1. Q-Learning (Off-Policy, Tabular)](#1-q-learning-off-policy-tabular)
-  - [2. SARSA (On-Policy, Tabular)](#2-sarsa-on-policy-tabular)
-  - [3. DQN — Deep Q-Network (Deep RL)](#3-dqn--deep-q-network-deep-rl)
-  - [When Should I Use Which Algorithm?](#-when-should-i-use-which-algorithm)
-  - [Quick Comparison Table](#quick-comparison-table)
+  - [Action Space](#action-space)
+  - [State Representation](#state-representation)
+  - [Reward Structure](#reward-structure)
+- [The Algorithms](#-the-algorithms)
+  - [What All Three Share](#what-all-three-share-similarities)
+  - [Q-Learning](#1-q-learning-off-policy-tabular)
+  - [SARSA](#2-sarsa-on-policy-tabular)
+  - [DQN](#3-dqn--deep-q-network-off-policy-neural)
+  - [Optimization Formulas Compared](#-optimization-formulas-compared)
+  - [Full Comparison Table](#full-comparison-table)
+  - [Which Algorithm for Which Problem?](#-which-algorithm-for-which-problem)
 - [Project Structure](#-project-structure)
 - [Getting Started](#-getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Running the Project](#running-the-project)
-- [Features](#-features)
-- [How Training Works](#-how-training-works)
+- [Training Process](#-training-process)
 - [Results & Comparison](#-results--comparison)
-- [Key Concepts for Beginners](#-key-concepts-for-beginners)
-- [License](#-license)
+  - [Latest Experiment Setup](#-latest-experiment-setup)
+  - [Learning Curves](#1-learning-curves)
+  - [Optimal Paths](#2-optimal-paths)
+  - [Performance Bar Charts](#3-performance-bar-charts)
+  - [Smart Analysis Radar](#4-smart-analysis-radar)
+  - [Why SARSA Wins This Case](#-why-sarsa-wins-this-case)
+  - [When Others Will Outperform](#-when-others-will-outperform)
+- [Key Concepts](#-key-concepts)
+- [References](#-references)
 
 ---
 
-## 🧹 What Is This Project?
+## 🧹 Project Overview
 
-Imagine you have a robot vacuum cleaner, but instead of programming it step-by-step ("go left, then clean, then go right..."), you let it **figure out how to clean on its own** through trial and error. That's exactly what this project does!
+This project implements a complete Reinforcement Learning pipeline around a custom **8×6 grid house** environment. A robot agent must discover — through pure trial and error — how to navigate between a Kitchen, Living Room, and Hallway and clean every dirty tile as efficiently as possible.
 
-The robot starts with **zero knowledge** about:
+**Why three algorithms?** To directly compare classical tabular RL (Q-Learning, SARSA) against deep RL (DQN) on the same task, and to demonstrate concretely how on-policy vs off-policy learning and neural-network function approximation affect final performance.
 
-- Where the rooms are
-- Which tiles are dirty
-- What actions lead to rewards
+**Key design decisions:**
 
-Through thousands of training episodes, the robot learns an optimal cleaning strategy entirely on its own. This is the magic of **Reinforcement Learning (RL)**.
-
-### The Learning Loop
-
-```
-┌──────────────────────────────────────────────────┐
-│                                                  │
-│   Robot observes state ──► Picks an action       │
-│         ▲                       │                │
-│         │                       ▼                │
-│   Updates its brain ◄── Gets reward/penalty      │
-│   (Q-table or Neural Net)                        │
-│                                                  │
-└──────────────────────────────────────────────────┘
-```
+- The robot receives **no hardcoded rules** — it learns entirely from the reward signal.
+- A **DNUT compass** (Detection of Nearest Uncleaned Tile) is embedded in the state, giving the agent a relative direction hint to the closest dirty tile, but the robot still has to learn how to use it.
+- **Pygame** renders the live cleaning visually; **Matplotlib** generates all comparison charts.
+- Code was developed with the assistance of AI code generation tools (**partially vibe coded**).
 
 ---
 
-## 🎓 What Will You Learn?
+## 🛠 Technology Stack
 
-By exploring this project, you'll understand:
-
-| Concept                         | Description                                     |
-| ------------------------------- | ----------------------------------------------- |
-| **Reinforcement Learning**      | How agents learn from rewards, not instructions |
-| **Q-Learning**                  | The classic off-policy tabular RL algorithm     |
-| **SARSA**                       | The on-policy alternative to Q-Learning         |
-| **DQN**                         | Using neural networks to approximate Q-values   |
-| **Exploration vs Exploitation** | The fundamental RL trade-off                    |
-| **Custom Gym Environments**     | Building your own environments with Gymnasium   |
-| **Pygame Visualization**        | Watching your trained agent in action           |
+| Tool / Library | Version | Role                                            |
+| -------------- | ------- | ----------------------------------------------- |
+| **Python**     | 3.8+    | Core language                                   |
+| **Gymnasium**  | 0.29+   | RL environment framework (custom `CleaningEnv`) |
+| **NumPy**      | latest  | Q-table storage, numerical operations           |
+| **PyTorch**    | 2.0+    | Neural network for DQN (`QNetwork`)             |
+| **Pygame**     | 2.5+    | 2D real-time visualization of the robot         |
+| **Matplotlib** | latest  | Training plots and comparison dashboard         |
+| **Pickle**     | stdlib  | Save/load Q-tables between runs                 |
 
 ---
 
-## 🏠 The Environment — A House to Clean
+## 🏠 The Environment
 
-The robot lives in a house made up of an **8×6 grid** with three rooms. Its mission: clean every dirty tile as efficiently as possible.
+The environment (`env/cleaning_env.py`) is a **custom Gymnasium environment** — it extends `gymnasium.Env` and implements `reset()`, `step()`, and `render()`.
 
 ### House Layout
+
+The house is an **8 × 6 grid** containing three rooms and perimeter walls.
 
 ```
     Col:  0     1     2     3     4     5     6     7
@@ -103,216 +96,305 @@ Row 4:   │WALL │ ⬜  │ ⬜  │ ⬜  │ ⬜  │ ⬜  │ ⬜  │WALL �
 Row 5:   │WALL │WALL │WALL │WALL │WALL │WALL │WALL │WALL │
          └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
 
-🟡 Kitchen (9 tiles)  — Highest priority, +50 reward
-🔵 Living Room (6 tiles) — Medium priority, +35 reward
-⬜ Hallway (8 tiles)  — Lowest priority, +20 reward
+🟡 Kitchen      — 9 tiles  — +50 reward each
+🔵 Living Room  — 6 tiles  — +35 reward each
+⬜ Hallway       — 8 tiles  — +20 reward each
+   WALL         — boundary — robot cannot enter
 ```
 
 **Total cleanable tiles: 23**
 
-### What the Robot Can Do (Actions)
+### Action Space
 
-The robot has **6 possible actions** at each step:
+The robot has **6 discrete actions** at every step:
 
-| Action | Name         | What It Does                  |
-| ------ | ------------ | ----------------------------- |
-| 0      | **Forward**  | Move up (row decreases)       |
-| 1      | **Backward** | Move down (row increases)     |
-| 2      | **Left**     | Move left (column decreases)  |
-| 3      | **Right**    | Move right (column increases) |
-| 4      | **Wait**     | Stay in place (penalized!)    |
-| 5      | **Clean**    | Clean the current tile        |
+| ID  | Name     | Effect                        |
+| --- | -------- | ----------------------------- |
+| 0   | Forward  | Move up (row − 1)             |
+| 1   | Backward | Move down (row + 1)           |
+| 2   | Left     | Move left (col − 1)           |
+| 3   | Right    | Move right (col + 1)          |
+| 4   | Wait     | Stay in place                 |
+| 5   | Clean    | Attempt to clean current tile |
 
-### How the Robot "Sees" the World (State)
+### State Representation
 
-The state encodes everything the robot needs to make decisions:
+The state is a single integer that encodes four components:
 
 ```
-State = Position × Dirt Status × Movement History × DNUT Direction
-         (23)       (2)            (5)                (10)
-
-Total: 23 × 2 × 5 × 10 = 2,300 possible states
+State = position × dirt_status × movement_history × DNUT_direction
+      =    23    ×      2       ×        5         ×      10
+      = 2,300 possible states
 ```
 
-| Component            | Values                      | Purpose                                  |
-| -------------------- | --------------------------- | ---------------------------------------- |
-| **Position**         | 23 cleanable tile positions | Where is the robot?                      |
-| **Dirt Status**      | Clean (0) or Dirty (1)      | Is the current tile dirty?               |
-| **Movement History** | N / S / E / W / None        | Which direction did the robot come from? |
-| **DNUT Direction**   | 3×3 grid directions + None  | Compass hint toward nearest dirty tile   |
+| Component            | Values                   | Meaning                                  |
+| -------------------- | ------------------------ | ---------------------------------------- |
+| **Position**         | 0–22 (23 tiles)          | Which cleanable tile the robot is on     |
+| **Dirt Status**      | 0 or 1                   | Is the current tile dirty?               |
+| **Movement History** | N / S / E / W / None (5) | Direction the robot came from            |
+| **DNUT Direction**   | 3×3 compass + None (10)  | Relative direction to nearest dirty tile |
 
-> **DNUT** = Detection of Nearest Uncleaned Tile — gives the robot a compass-like hint pointing toward the closest dirty tile.
+> **DNUT** = Detection of Nearest Uncleaned Tile — a compass-like hint embedded in the state that points toward the closest unvisited dirty tile by Manhattan distance. It reduces wandering without hardcoding any policy.
 
-### Rewards & Penalties
+### Reward Structure
 
-The reward system is what **teaches** the robot. Good actions get positive rewards; bad actions get penalties.
+The reward function shapes what the robot learns to do:
 
-| Event                              | Reward         | Why?                             |
-| ---------------------------------- | -------------- | -------------------------------- |
-| Clean a dirty **Kitchen** tile     | **+50**        | Kitchen is highest priority      |
-| Clean a dirty **Living Room** tile | **+35**        | Medium priority                  |
-| Clean a dirty **Hallway** tile     | **+20**        | Lowest priority                  |
-| **All tiles cleaned!**             | **+200** bonus | Big reward for finishing the job |
-| Step on an already clean tile      | **-5**         | Don't waste time on clean tiles  |
-| Use "Clean" on a clean tile        | **-10**        | Pointless action                 |
-| Hit a wall                         | **-5**         | Invalid move                     |
-| Wait (do nothing)                  | **-3**         | Don't just stand there!          |
-| Every step taken                   | **-0.1**       | Encourages efficiency            |
+| Event                        | Reward         | Purpose                     |
+| ---------------------------- | -------------- | --------------------------- |
+| Clean dirty Kitchen tile     | **+50**        | High-priority room          |
+| Clean dirty Living Room tile | **+35**        | Medium priority             |
+| Clean dirty Hallway tile     | **+20**        | Low priority                |
+| All 23 tiles cleaned         | **+200 bonus** | Incentivise full completion |
+| Step on already-clean tile   | **−5**         | Avoid redundant movement    |
+| Use Clean on clean tile      | **−10**        | Waste of an action          |
+| Hit a wall                   | **−5**         | Invalid move penalty        |
+| Wait (do nothing)            | **−3**         | Time is costly              |
+| Every step taken             | **−0.1**       | Encourages efficiency       |
 
 ---
 
-## 🧠 The Algorithms — Three Ways to Learn
+## 🧠 The Algorithms
 
-This project implements three RL algorithms, from simplest to most advanced. Each one teaches the robot to clean, but they learn in different ways.
+### What All Three Share (Similarities)
+
+Despite being architecturally different, all three algorithms operate on **the exact same environment** with **the same interface**:
+
+| Shared Property       | Value                                                         |
+| --------------------- | ------------------------------------------------------------- |
+| Environment           | `CleaningEnv` — 8×6 grid, 23 cleanable tiles                  |
+| Action space          | 6 discrete actions (move × 4, wait, clean)                    |
+| State space           | 2,300 discrete states (tabular) / 40-dim feature vector (DQN) |
+| Epsilon-greedy policy | All three explore with ε-greedy and decay ε over time         |
+| Episode structure     | Reset → loop(observe → act → reward → update) → done          |
+| Discount factor γ     | 0.99 for all three                                            |
+| Epsilon start / end   | 1.0 → 0.02 for all three                                      |
+| Goal                  | Maximize cumulative reward = clean all 23 tiles efficiently   |
+| Bellman foundation    | All three approximate the Bellman optimality equation         |
+
+This shared ground makes the algorithm comparison **fair and meaningful**: any performance difference comes purely from the learning mechanism, not from the task or action set.
+
+---
 
 ### 1. Q-Learning (Off-Policy, Tabular)
 
-**The classic.** Q-Learning stores a big table (Q-table) that maps every (state, action) pair to an expected reward value. Think of it as a giant cheat sheet.
+Q-Learning stores a **Q-table** mapping every (state, action) pair to an expected cumulative reward. It is **off-policy**: the update always bootstraps from the best possible next action, regardless of what the agent actually does next.
 
-**How it updates:**
+**Update rule (Bellman optimality):**
+
+$$Q(s, a) \leftarrow Q(s, a) + \alpha \Big[ r + \gamma \cdot \underbrace{\max_{a'} Q(s', a')}_{\text{best future action}} - Q(s, a) \Big]$$
+
+**Hyperparameters used:**
+
+| Parameter         | Value                     |
+| ----------------- | ------------------------- |
+| Learning rate α   | 0.15                      |
+| Discount factor γ | 0.99                      |
+| Epsilon decay     | 0.998 per episode         |
+| Episodes          | 5,000                     |
+| Q-table size      | 2,300 × 6 = 13,800 values |
+
+**Intuition:** Q-Learning is the _optimist_ — it always imagines the best possible future when updating its estimates. This makes it converge quickly to the **theoretically optimal policy**, but it ignores the risk that exploration noise might accidentally land the agent in a bad state.
+
+**Training loop:**
 
 ```
-Q(s, a) ← Q(s, a) + α [ r + γ · max Q(s', a') − Q(s, a) ]
-                                   ^^^^^^^^^^^
-                            Uses the BEST possible next action
-                            (even if it doesn't actually take it)
+s ← reset()
+while not done:
+    a ← ε-greedy(Q[s])
+    s', r, done ← step(a)
+    Q[s][a] += α * (r + γ * max(Q[s']) - Q[s][a])   # off-policy update
+    s ← s'
 ```
-
-**Key idea:** Q-Learning is **off-policy** — it always assumes it will take the best action in the future, even while it's still exploring randomly. This makes it an **optimistic** learner.
-
-**Real-world analogy:**
-
-> Imagine learning to cook by trying recipes randomly. After each attempt, you write down "If I'm making pasta and I add salt → taste rating: 8/10". Over time, your notebook (Q-table) tells you the best action for every situation. Even while experimenting, you record what the _optimal_ move would have been.
-
-**Best for:**
-
-- Small, discrete state spaces (like our 2,300 states)
-- When you want the theoretically optimal policy
-- When you have enough memory to store the full Q-table
 
 ---
 
 ### 2. SARSA (On-Policy, Tabular)
 
-**The cautious cousin.** SARSA also uses a Q-table, but updates differently. The name stands for **(S, A, R, S', A')** — State, Action, Reward, next State, next Action.
+SARSA shares Q-Learning's Q-table structure but updates using the **actual next action chosen by the policy**, not the hypothetical best one. The name comes from the five-tuple used: **(S, A, R, S', A')**.
 
-**How it updates:**
+**Update rule (Bellman expectation):**
 
-```
-Q(s, a) ← Q(s, a) + α [ r + γ · Q(s', a') − Q(s, a) ]
-                                   ^^^^^^^^
-                            Uses the ACTUAL next action chosen
-                            (including random exploration moves!)
-```
+$$Q(s, a) \leftarrow Q(s, a) + \alpha \Big[ r + \gamma \cdot \underbrace{Q(s', a')}_{\text{actual next action}} - Q(s, a) \Big]$$
 
-**Key idea:** SARSA is **on-policy** — it learns the value of the policy it's _actually following_, including all the random exploratory moves. This makes it more **conservative** and **safer**.
+**Key difference from Q-Learning:** `a'` is selected by ε-greedy _before_ the update, so the Q-value reflects what the agent will _actually_ do — including random exploration moves. This is the **on-policy** property.
 
-**Real-world analogy:**
+**Hyperparameters used:**
 
-> Same cooking analogy, but this time you record what _actually_ happened: "I was making pasta, I randomly threw in chili flakes (exploration), and the result was... interesting." Your notebook reflects your real experience, not the ideal. This means you learn to avoid risky situations because your notes include all the times exploration went wrong.
+| Parameter         | Value                     |
+| ----------------- | ------------------------- |
+| Learning rate α   | 0.15                      |
+| Discount factor γ | 0.99                      |
+| Epsilon decay     | 0.998 per episode         |
+| Episodes          | 5,000                     |
+| Q-table size      | 2,300 × 6 = 13,800 values |
 
-**Best for:**
+**Intuition:** SARSA is the _realist_ — it knows that during training it sometimes takes random steps (exploration), so it builds that cost into its value estimates. States near walls get penalised because the agent knows it might randomly walk into one. This makes SARSA more **conservative and cautious**.
 
-- When safety matters (avoid dangerous states)
-- When the exploration policy matters for the value estimates
-- When you want a more stable, risk-aware policy
-
-**Example — SARSA vs Q-Learning near a wall:**
+**Training loop:**
 
 ```
-Imagine the robot is one step away from a wall.
-
-Q-Learning thinks: "I'll just go forward optimally, no problem!"
-    → Ignores the risk that exploration might hit the wall
-
-SARSA thinks: "But sometimes I randomly hit the wall due to exploration..."
-    → Learns to avoid being near walls (safer policy)
+s ← reset()
+a ← ε-greedy(Q[s])
+while not done:
+    s', r, done ← step(a)
+    a' ← ε-greedy(Q[s'])         # next action chosen NOW (on-policy)
+    Q[s][a] += α * (r + γ * Q[s'][a'] - Q[s][a])   # on-policy update
+    s ← s', a ← a'
 ```
 
 ---
 
-### 3. DQN — Deep Q-Network (Deep RL)
+### 3. DQN — Deep Q-Network (Off-Policy, Neural)
 
-**The brain upgrade.** Instead of a Q-table, DQN uses a **neural network** to estimate Q-values. This lets it handle much larger state spaces and _generalize_ across similar states.
+DQN replaces the Q-table with a **neural network** `Q(s; θ) → [Q(s,a₀), ..., Q(s,a₅)]`. It is off-policy like Q-Learning, but adds two stability mechanisms: **experience replay** and a **target network**.
 
-**Architecture:**
-
-```
-                   ┌─────────────────────────────────┐
-                   │       Neural Network (QNet)      │
-                   │                                  │
-  State Features   │  Input(25) → 64 → ReLU → 64     │   Q-values
-  [robot_row,      │            → ReLU → 6            │   [Q(s,a0),
-   robot_col,      │                                  │    Q(s,a1),
-   dirt_tile_1,    │  Policy Network + Target Network │    ...
-   dirt_tile_2,    │  + Experience Replay Buffer      │    Q(s,a5)]
-   ...,            │                                  │
-   dirt_tile_23]   └─────────────────────────────────┘
-```
-
-**Three key innovations that make DQN work:**
-
-| Component             | Problem It Solves                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------------- |
-| **Experience Replay** | Training data is correlated (sequential moves); random sampling from a buffer breaks this correlation |
-| **Target Network**    | The network chases its own predictions (moving target); a frozen copy provides stable targets         |
-| **Feature Vector**    | Instead of a state ID, uses meaningful features (position + dirt status of all 23 tiles)              |
-
-**Feature vector (25 dimensions):**
+**Network architecture:**
 
 ```
-[robot_row_normalized, robot_col_normalized, tile_1_dirty?, tile_2_dirty?, ..., tile_23_dirty?]
+Input (40 features)
+  [robot_row_norm, robot_col_norm,
+   tile_0_dirty?, tile_1_dirty?, ..., tile_22_dirty?,   ← 23 dirt bits
+   came_from_one_hot (5 dims),
+   DNUT_one_hot (10 dims)]
+        │
+  Linear(40 → 64) → ReLU
+        │
+  Linear(64 → 64) → ReLU
+        │
+  Linear(64 → 6)   ← output: Q-value for each of 6 actions
 ```
 
-**Real-world analogy:**
+**Update rule (TD with frozen target network):**
 
-> Instead of writing down every situation in a notebook (Q-table), you develop _intuition_ (neural network). You don't need to have been in the exact same situation before — if it _looks similar_ to something you've seen, you can make a good decision. A chef who's cooked 1000 meals doesn't need a recipe for every dish; they understand flavors and can improvise.
+$$\mathcal{L}(\theta) = \mathbb{E}\Big[ \Big( r + \gamma \cdot \max_{a'} Q(s', a';\, \theta^{-}) - Q(s, a;\, \theta) \Big)^2 \Big]$$
 
-**Best for:**
+Where $\theta^{-}$ are the **frozen target network weights** (synced every 250 steps).
 
-- Large or continuous state spaces (e.g., robotics, game pixels)
-- When you want generalization across similar states
-- When tabular methods run out of memory
+**Three innovations that stabilise DQN:**
+
+| Component                                 | Problem Solved                                                                                |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Experience Replay** (buffer = 50,000)   | Sequential transitions are correlated — random mini-batch sampling breaks this                |
+| **Target Network** (sync every 250 steps) | Without it, the network chases its own shifting predictions (moving target problem)           |
+| **Feature Vector** (40-dim)               | Richer input than a single integer state-ID; allows generalisation across tile configurations |
+
+**Hyperparameters used:**
+
+| Parameter              | Value              |
+| ---------------------- | ------------------ |
+| Learning rate α (Adam) | 0.001              |
+| Discount factor γ      | 0.99               |
+| Epsilon decay          | 0.9984 per episode |
+| Episodes               | 3,000              |
+| Batch size             | 64                 |
+| Replay buffer          | 50,000             |
+| Target update interval | every 250 steps    |
 
 ---
 
-### 🤔 When Should I Use Which Algorithm?
+### 📐 Optimization Formulas Compared
 
-Here are practical scenarios to help you choose:
+|                      | Q-Learning                       | SARSA                       | DQN                                         |
+| -------------------- | -------------------------------- | --------------------------- | ------------------------------------------- |
+| **Bootstrap target** | $r + \gamma \max_{a'} Q(s', a')$ | $r + \gamma\, Q(s', a')$    | $r + \gamma \max_{a'} Q_{\theta^-}(s', a')$ |
+| **Policy**           | Off-policy (greedy target)       | On-policy (ε-greedy target) | Off-policy (greedy target via frozen net)   |
+| **Q estimator**      | Table entry $Q[s][a]$            | Table entry $Q[s][a]$       | Neural network $Q(s,a;\theta)$              |
+| **Loss**             | TD error (mean squared)          | TD error (mean squared)     | MSE loss, gradient descent via Adam         |
+| **Update trigger**   | Every step                       | Every step                  | After each step (mini-batch from replay)    |
 
-#### Scenario 1: "I have a simple grid world with < 10,000 states"
+The only difference between Q-Learning and SARSA is **one symbol**: `max Q(s', a')` vs `Q(s', a')`. That single change — from greedy to actual-policy bootstrapping — shifts the agent from optimistic-aggressive to conservative-cautious.
 
-> **Use Q-Learning.** It's simple, fast, and guaranteed to converge. The Q-table fits easily in memory, and you don't need the overhead of a neural network.
+---
 
-#### Scenario 2: "My robot is near dangerous cliffs / penalties"
+### Full Comparison Table
 
-> **Use SARSA.** Because SARSA accounts for exploration noise in its value estimates, the robot will learn to stay away from dangerous areas. Q-Learning might learn a policy that walks right along the edge (optimal but risky).
+| Feature              | Q-Learning        | SARSA             | DQN                       |
+| -------------------- | ----------------- | ----------------- | ------------------------- |
+| **Policy type**      | Off-policy        | On-policy         | Off-policy                |
+| **Q estimator**      | Table             | Table             | Neural network            |
+| **State space**      | Discrete, small   | Discrete, small   | Can be continuous / large |
+| **Memory**           | Grows with states | Grows with states | Fixed (network weights)   |
+| Epsilon decay        | 0.998             | 0.998             | 0.9984                    |
+| **Safety / caution** | Aggressive        | Conservative      | Depends on tuning         |
+| **Training speed**   | Fast              | Medium            | Slower (gradient descent) |
+| Replay buffer        | —                 | —                 | 50,000                    |
+| Target update        | —                 | —                 | Every 250 steps           |
+| **Hardware needs**   | CPU only          | CPU only          | Benefits from GPU         |
 
-#### Scenario 3: "My state space is huge (images, continuous values)"
+---
 
-> **Use DQN.** When there are millions of possible states, a Q-table can't store them all. A neural network can generalize — if it has seen a _similar_ state, it can make a good guess for a new one.
+### 🎯 Which Algorithm for Which Problem?
 
-#### Scenario 4: "I want the fastest training for this project"
+### 🧪 Latest Experiment Setup
 
-> **Use Q-Learning.** Tabular methods are faster per step than DQN (no gradient computation). Q-Learning typically converges faster than SARSA because of its optimistic updates.
+The README analysis below is based on the **latest regenerated artifacts** after retraining and testing again:
 
-#### Scenario 5: "I'm building a self-driving car simulation"
+- **Training run used for plots:** `2000` episodes for **Q-Learning**, **SARSA**, and **DQN**
+- **Evaluation pass after training:** `10` test episodes for qualitative verification
+- **Quantitative plot statistics:** computed from the **last 100 training episodes** saved in `models/*_history.pkl`
+- **Environment used:** `conda activate torch_gpu`
+- **Current environment check during this README update:** `torch_gpu` resolves to `torch 2.10.0+cpu` with `cuda_available = False` on this machine
 
-> **Use DQN** (or more advanced algorithms). The state space (camera images, sensor data) is way too large for a table. You need function approximation.
+### Latest numeric summary from the current saved models
 
-### Quick Comparison Table
+| Metric (last 100 episodes unless noted) | Q-Learning |       SARSA |         DQN |
+| --------------------------------------- | ---------: | ----------: | ----------: |
+| Average reward                          |     984.22 | **1014.70** |     1011.24 |
+| Reward std $\sigma$                     |      49.80 |    **6.29** |        9.30 |
+| Average tiles cleaned                   |      23.00 |       23.00 |       23.00 |
+| Success rate                            |     100.0% |      100.0% |      100.0% |
+| Average steps                           |      29.43 |   **23.57** |       24.09 |
+| Best reward ever                        |    1007.50 | **1017.70** | **1017.70** |
+| Training time                           |    10.12 s |  **6.97 s** |    468.88 s |
+| Reward per second                       |      97.22 |  **145.58** |        2.16 |
+| 90% success reached at episode          |        110 |         107 |     **106** |
 
-| Feature             | Q-Learning                            | SARSA                                   | DQN                                |
-| ------------------- | ------------------------------------- | --------------------------------------- | ---------------------------------- |
-| **Type**            | Tabular / Off-policy                  | Tabular / On-policy                     | Neural Net / Off-policy            |
-| **State Space**     | Small, discrete                       | Small, discrete                         | Large, continuous                  |
-| **Memory**          | Q-table (grows with states)           | Q-table (grows with states)             | Fixed (network weights)            |
-| **Generalization**  | None (each state is independent)      | None                                    | Yes (similar states share weights) |
-| **Update Target**   | `max Q(s', a')` (best possible)       | `Q(s', a')` (actual next action)        | Target network + replay buffer     |
-| **Safety**          | Aggressive (ignores exploration risk) | Conservative (accounts for exploration) | Depends on tuning                  |
-| **Training Speed**  | Fast                                  | Medium                                  | Slower (GPU helps)                 |
-| **Code Complexity** | Simple                                | Simple                                  | More complex                       |
-| **Best For**        | Small problems, fast prototyping      | Safety-critical tasks                   | Large/complex problems             |
+**High-level takeaway:** all three agents now solve the task perfectly by the end of training, but **SARSA is the best final overall performer** because it combines the **highest final reward**, **lowest variance**, and **fewest steps**, while **DQN is the fastest to hit 90% success** by a tiny margin.
+
+#### By Problem Complexity
+
+| Problem Size     | State Space                      | Best Algorithm      | Reason                                                   |
+| ---------------- | -------------------------------- | ------------------- | -------------------------------------------------------- |
+| **Tiny**         | < 1,000 states                   | Q-Learning          | Converges fastest, zero overhead                         |
+| **Small–Medium** | 1,000–100,000 states             | Q-Learning or SARSA | Table still fits in memory; choose based on safety needs |
+| **Large**        | 100,000+ states                  | DQN                 | Table would be too large; network generalises            |
+| **Continuous**   | Infinite (e.g., pixels, sensors) | DQN / Actor-Critic  | Only function approximation scales                       |
+
+#### By Task Characteristics
+
+**Use Q-Learning when:**
+
+- State space is small and discrete (like our 2,300-state house).
+- You want the theoretically optimal policy fast.
+- Safety is not critical — risky states near penalties are acceptable.
+- Quick prototyping or benchmarking needed.
+
+**Use SARSA when:**
+
+- The environment has **cliffs, traps, or costly penalties** near the agent's path.
+- You want a policy that is robust to exploration noise during training.
+- The learned policy will be deployed in a **safety-critical** setting (robot navigation, medical control).
+- You need stable, predictable behaviour near boundaries.
+
+**Use DQN when:**
+
+- State space is **too large** for a table (robotics, games with image inputs).
+- You need **generalisation** — the agent should handle unseen-but-similar states.
+- Raw features (pixels, sensor readings) rather than discrete IDs.
+- Examples: Atari games, self-driving simulations, complex robot manipulation.
+
+#### Concrete Scenario Guide
+
+| Scenario                                 | Algorithm                     |
+| ---------------------------------------- | ----------------------------- |
+| 5×5 grid maze, 50 states                 | Q-Learning                    |
+| Same maze but with a lava cliff edge     | SARSA                         |
+| 100×100 grid, 10,000 states              | Q-Learning (table still fine) |
+| 1,000-tile house + obstacle avoidance    | DQN                           |
+| Atari Breakout (84×84 pixels)            | DQN                           |
+| Real robotic arm with joint angles       | DQN / SAC                     |
+| Bank fraud detection (discrete features) | Q-Learning / SARSA            |
 
 ---
 
@@ -321,37 +403,40 @@ Here are practical scenarios to help you choose:
 ```
 cleaning-robot-rl/
 │
-├── main.py                  # Interactive menu: train, test, compare all algorithms
-├── train.py                 # Standalone Q-Learning training script
-├── test.py                  # Standalone Q-Learning testing script
-├── requirements.txt         # Python dependencies
+├── main.py              # Interactive menu: train, test, compare all algorithms
+├── train.py             # Standalone Q-Learning training script
+├── test.py              # Standalone Q-Learning testing/visualisation script
+├── requirements.txt     # Python dependencies
 │
 ├── env/
 │   ├── __init__.py
-│   └── cleaning_env.py      # Custom Gymnasium environment (house, rewards, rendering)
+│   └── cleaning_env.py  # Custom Gymnasium environment (8×6 grid, rewards, render)
 │
 ├── agent/
 │   ├── __init__.py
-│   ├── q_learning_agent.py  # Q-Learning agent (tabular, off-policy)
-│   ├── sarsa_agent.py       # SARSA agent (tabular, on-policy)
-│   └── dqn_agent.py         # DQN agent (neural network, off-policy)
+│   ├── q_learning_agent.py   # Q-Learning (tabular, off-policy)
+│   ├── sarsa_agent.py        # SARSA (tabular, on-policy)
+│   └── dqn_agent.py          # DQN (neural network, off-policy)
 │
 ├── utils/
 │   ├── __init__.py
-│   ├── helpers.py           # Time formatting, progress bars, console utilities
-│   └── plotting.py          # Matplotlib plots for training curves
+│   ├── helpers.py       # Progress bars, time formatting, console utilities
+│   └── plotting.py      # Matplotlib training curves and export helpers
 │
-├── models/                  # Saved trained models (auto-generated)
+├── models/              # Saved trained models (auto-generated after training)
 │   ├── q_table.pkl          # Trained Q-Learning Q-table
 │   ├── sarsa_table.pkl      # Trained SARSA Q-table
 │   ├── dqn_model.pth        # Trained DQN neural network weights
 │   └── *_history.pkl        # Training history for comparison dashboard
 │
-└── plots/                   # Generated comparison charts (auto-generated)
+└── plots/               # Generated comparison charts
     ├── comparison_learning_curves.png
     ├── comparison_optimal_paths.png
     ├── comparison_bars.png
-    └── comparison_smart_analysis.png
+    ├── comparison_smart_analysis.png
+    ├── optimal_path_qlearning.png
+    ├── optimal_path_sarsa.png
+    └── optimal_path_dqn.png
 ```
 
 ---
@@ -360,42 +445,34 @@ cleaning-robot-rl/
 
 ### Prerequisites
 
-- **Python 3.8+**
-- A display (for Pygame visualization)
+- Python 3.8+
+- A display (required for Pygame visualisation)
 
 ### Installation
 
-1. **Clone the repository:**
+```bash
+git clone https://github.com/ubaidur404786/cleaning-robot-rl.git
+cd cleaning-robot-rl
+pip install -r requirements.txt
+```
 
-   ```bash
-   git clone https://github.com/<your-username>/cleaning-robot-rl.git
-   cd cleaning-robot-rl
-   ```
+**Dependencies installed:**
 
-2. **Install dependencies:**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-   This installs:
-   | Package | Purpose |
-   |---------|---------|
-   | `gymnasium` | RL environment framework |
-   | `numpy` | Numerical operations & Q-table storage |
-   | `matplotlib` | Training plots & comparison charts |
-   | `pygame` | 2D visualization of the robot cleaning |
-   | `torch` | Neural network for DQN agent |
+| Package      | Purpose                               |
+| ------------ | ------------------------------------- |
+| `gymnasium`  | RL environment framework              |
+| `numpy`      | Q-table storage, numerical operations |
+| `matplotlib` | Training plots and comparison charts  |
+| `pygame`     | 2D live visualisation of the robot    |
+| `torch`      | Neural network for DQN                |
 
 ### Running the Project
 
-#### Option 1: Interactive Menu (Recommended)
+#### Interactive Menu (Recommended)
 
 ```bash
 python main.py
 ```
-
-This opens a full interactive menu:
 
 ```
   +--------------------------------------------------+
@@ -407,36 +484,26 @@ This opens a full interactive menu:
   |  [4]  Test  Q-Learning Agent (Pygame UI)         |
   |  [5]  Test  SARSA Agent (Pygame UI)              |
   |  [6]  Test  DQN Agent (Pygame UI)                |
-  |  [7-9] Show Optimal Paths                        |
+  |  [7]  Show Optimal Path — Q-Learning             |
+  |  [8]  Show Optimal Path — SARSA                  |
+  |  [9]  Show Optimal Path — DQN                    |
   |  [10] Compare All Algorithms (Dashboard)         |
   |  [11] Quick Train & Compare All                  |
   |  [0]  Exit                                       |
   +--------------------------------------------------+
 ```
 
-#### Option 2: Quick Train & Compare (One Command)
-
-From the menu, select **[11] Quick Train & Compare All** to:
-
-1. Train Q-Learning, SARSA, and DQN back-to-back
-2. Generate a full comparison dashboard with charts
-
-#### Option 3: Train from Python Code
+#### Train from Python Code
 
 ```python
 from main import train
 
-# Train Q-Learning for 5000 episodes
 history = train(algo='qlearning', num_episodes=5000)
-
-# Train SARSA for 5000 episodes
-history = train(algo='sarsa', num_episodes=5000)
-
-# Train DQN for 3000 episodes
-history = train(algo='dqn', num_episodes=3000)
+history = train(algo='sarsa',     num_episodes=5000)
+history = train(algo='dqn',       num_episodes=3000)
 ```
 
-#### Option 4: Standalone Training (Q-Learning only)
+#### Standalone Q-Learning Training
 
 ```bash
 python train.py
@@ -444,130 +511,222 @@ python train.py
 
 ---
 
-## ✨ Features
+## 📈 Training Process
 
-- **Three RL Algorithms** — Q-Learning, SARSA, and DQN implemented from scratch
-- **Custom Gymnasium Environment** — fully featured house grid with rooms, walls, and dirt
-- **Pygame Visualization** — watch the robot clean in real time with colored rooms and animations
-- **Interactive Menu** — easy-to-use console interface for training, testing, and comparing
-- **Comparison Dashboard** — automated 4-figure analysis with:
-  - Learning curves with variance bands
-  - Side-by-side optimal path visualization
-  - Performance bar charts with winner badges
-  - Radar chart for multi-dimensional comparison
-- **Optimal Path Extraction** — see the exact route each algorithm takes
-- **Random Baseline** — compare trained agents against random actions to verify learning
-- **Fully Documented Code** — every file has detailed docstrings explaining the RL concepts
-
----
-
-## 📈 How Training Works
-
-Here's what happens during training (step by step):
+Each training episode:
 
 ```
-Episode 1 (epsilon = 1.0 → 100% random)
-├── Robot spawns on a random tile, all 23 tiles are dirty
-├── Takes random actions (exploring the house)
-├── Gets rewards/penalties → updates Q-values
-├── Episode ends when all tiles clean OR max steps reached
-└── Epsilon decays slightly
-
-Episode 100 (epsilon ≈ 0.82 → 82% random)
-├── Still mostly exploring, but starting to exploit learned values
-└── Q-table is filling up with rough estimates
-
-Episode 1000 (epsilon ≈ 0.13 → 13% random)
-├── Mostly using learned policy, occasional exploration
-└── Success rate improving rapidly
-
-Episode 3000+ (epsilon ≈ 0.02 → 2% random)
-├── Almost fully exploiting learned optimal policy
-├── Cleans all 23 tiles consistently
-└── Efficient paths through all rooms
+1. Reset:   All 23 tiles become dirty; robot spawns on a random tile
+2. Loop until done:
+   a. Observe current state (position + dirt + history + DNUT)
+   b. Choose action via ε-greedy policy
+   c. Execute action in environment
+   d. Receive reward and next state
+   e. Update Q-table (or neural network)
+   f. Move to next state
+3. End:     All tiles clean (success) OR max steps reached (timeout)
+4. Decay ε: epsilon × 0.998 (tabular) or × 0.9984 (DQN)
 ```
 
-### Hyperparameters
+### Hyperparameters Summary
 
-| Parameter           | Q-Learning / SARSA | DQN             | Description                  |
-| ------------------- | ------------------ | --------------- | ---------------------------- |
-| Learning Rate (α)   | 0.15               | 0.001           | How fast Q-values update     |
-| Discount Factor (γ) | 0.99               | 0.99            | Importance of future rewards |
-| Epsilon Start       | 1.0                | 1.0             | Initial exploration rate     |
-| Epsilon End         | 0.02               | 0.02            | Final exploration rate       |
-| Epsilon Decay       | 0.998              | 0.9987          | Decay rate per episode       |
-| Default Episodes    | 5,000              | 3,000           | Recommended training length  |
-| Batch Size          | —                  | 64              | DQN mini-batch size          |
-| Replay Buffer       | —                  | 10,000          | DQN experience memory        |
-| Target Update       | —                  | Every 100 steps | DQN target network sync      |
+| Parameter         | Q-Learning | SARSA | DQN             |
+| ----------------- | ---------- | ----- | --------------- |
+| Learning rate α   | 0.15       | 0.15  | 0.001 (Adam)    |
+| Discount factor γ | 0.99       | 0.99  | 0.99            |
+| Epsilon start     | 1.0        | 1.0   | 1.0             |
+| Epsilon end       | 0.02       | 0.02  | 0.02            |
+| Epsilon decay     | 0.998      | 0.998 | 0.9984          |
+| Default episodes  | 5,000      | 5,000 | 5,000           |
+| Batch size        | —          | —     | 64              |
+| Replay buffer     | —          | —     | 50,000          |
+| Target update     | —          | —     | Every 250 steps |
 
 ---
 
 ## 📊 Results & Comparison
 
-After training all three algorithms, the comparison dashboard generates detailed analysis:
-
-### What Gets Generated
-
-| Chart                | What It Shows                                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| **Learning Curves**  | Reward, tiles cleaned, success rate, and epsilon over episodes (with variance bands)           |
-| **Optimal Paths**    | Side-by-side visualization of each algorithm's cleaning route on the house grid                |
-| **Performance Bars** | Bar charts for 6 metrics (reward, tiles, success %, steps, stability, time) with winner badges |
-| **Smart Analysis**   | Convergence speed, reward stability, training efficiency, and a radar/spider chart             |
-
-### Console Output Includes
-
-- Algorithm characteristics table (type, model size, update rule)
-- Full performance summary with per-metric winners
-- Strengths & weaknesses of each algorithm
-- Overall winner determination
+All plots below are generated automatically by the comparison dashboard (`main.py → [10]`) and saved to the `plots/` folder. They are served directly from the GitHub repository.
 
 ---
 
-## 📚 Key Concepts for Beginners
+### 1. Learning Curves
 
-New to Reinforcement Learning? Here's a quick glossary:
+![Learning Curves](https://raw.githubusercontent.com/ubaidur404786/cleaning-robot-rl/main/plots/comparison_learning_curves.png)
 
-| Term             | Meaning                                                                 |
-| ---------------- | ----------------------------------------------------------------------- |
-| **Agent**        | The robot (the learner that takes actions)                              |
-| **Environment**  | The house grid (everything outside the agent)                           |
-| **State**        | A snapshot of the current situation (position + dirt info)              |
-| **Action**       | Something the agent can do (move, clean, wait)                          |
-| **Reward**       | Feedback signal — positive = good, negative = bad                       |
-| **Episode**      | One complete run (start → all clean or time out)                        |
-| **Policy**       | The agent's strategy (what action to take in each state)                |
-| **Q-value**      | Expected total future reward for taking an action in a state            |
-| **Epsilon (ε)**  | Probability of taking a random action (exploration rate)                |
-| **Exploration**  | Trying random actions to discover new strategies                        |
-| **Exploitation** | Using the best known action to maximize reward                          |
-| **Off-policy**   | Learns optimal behavior regardless of current actions (Q-Learning, DQN) |
-| **On-policy**    | Learns the value of the behavior it actually follows (SARSA)            |
-| **Discount (γ)** | How much future rewards are worth compared to immediate                 |
+**What this shows:**
+This 4-panel figure tracks each algorithm across the full 2000-episode training run.
 
-### The Exploration-Exploitation Dilemma
+- **Top-left — Episode Reward:** SARSA finishes highest at **1014.70 ± 6.29**, DQN is close behind at **1011.24 ± 9.30**, and Q-Learning ends lower at **984.22 ± 49.80**. The big story here is not just reward level, but reward **stability**: Q-Learning's band is much wider, showing noticeably larger variance in late training.
+- **Top-right — Tiles Cleaned per Episode:** all three algorithms end at **23.00 / 23.00 tiles cleaned**, so the competition is no longer about whether they can finish the job — it is about **how efficiently and consistently** they do it.
+- **Bottom-left — Success Rate:** all three reach **100% success** in the last 100 episodes. The convergence markers show that **DQN reaches 90% success first at episode 106**, SARSA follows at **107**, and Q-Learning at **110**. So the fastest learner early on is DQN by a hair, but the strongest finisher is SARSA.
+- **Bottom-right — Epsilon Decay:** Q-Learning and SARSA decay exploration faster toward the minimum, while DQN keeps a slightly higher exploration level longer because of its `0.9984` decay schedule. That helps DQN avoid premature overconfidence, but it also keeps training computationally heavier.
 
-This is the core challenge in RL:
+**Comments on this plot:**
 
-```
-🎰 Should I go to my favorite restaurant (exploitation)?
-   Or try a new one that might be even better (exploration)?
-
-🤖 In our project:
-   - High epsilon (early training) → lots of exploration → discover the house
-   - Low epsilon (late training) → mostly exploitation → clean efficiently
-```
+- The three curves prove the environment is now **fully learnable** by all agents within 2000 episodes.
+- SARSA has the **cleanest late-stage plateau**, which is exactly why it wins the stability-oriented metrics later.
+- Q-Learning learns the task, but it remains the noisiest in reward because its off-policy optimism makes it less cautious near penalty-heavy boundaries.
+- DQN learns surprisingly well on this small problem, but the neural network is doing extra work for a state space that tabular methods already handle very well.
 
 ---
 
-## 📄 License
+### 2. Optimal Paths
 
-This project is open source and available for educational purposes.
+![Optimal Paths Comparison](https://raw.githubusercontent.com/ubaidur404786/cleaning-robot-rl/main/plots/comparison_optimal_paths.png)
+
+**What this shows:**
+Side-by-side visualisation of the cleaning path each trained algorithm takes on the house grid. The path is overlaid on the room layout (yellow = Kitchen, blue = Living Room, grey = Hallway). Each numbered dot marks the **first visit** to a tile, arrows show transitions, `S` is the start, and `E` is the end.
+
+| Individual Path         | Link                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Q-Learning optimal path | ![Q-Learning](https://raw.githubusercontent.com/ubaidur404786/cleaning-robot-rl/main/plots/optimal_path_qlearning.png) |
+| SARSA optimal path      | ![SARSA](https://raw.githubusercontent.com/ubaidur404786/cleaning-robot-rl/main/plots/optimal_path_sarsa.png)          |
+| DQN optimal path        | ![DQN](https://raw.githubusercontent.com/ubaidur404786/cleaning-robot-rl/main/plots/optimal_path_dqn.png)              |
+
+**Current path results from the latest models:**
+
+- **Q-Learning:** cleans **23/23 tiles in 27 steps**
+- **SARSA:** cleans **23/23 tiles in 23 steps**
+- **DQN:** cleans **23/23 tiles in 23 steps**
+
+**Comments on this plot:**
+
+- **SARSA and DQN are tied for the shortest extracted path length** in the current saved models, both finishing in **23 steps**, which is almost a perfect room-to-room sweep.
+- **Q-Learning takes 27 steps**, so it still solves the task completely but wastes a few more moves through extra revisits or less compact routing.
+- The most important visual cue is how **SARSA's path looks systematic**: it tends to enter and clear room regions with less unnecessary wandering.
+- DQN's path is also very strong now, showing that the network has learned the room structure well even though the problem is small enough that deep learning is not strictly necessary.
+- These path plots are now **greedy evaluation paths** (`eval_epsilon = 0.0`), so unlike an exploratory rollout, they represent the learned policy directly rather than random test-time noise.
+
+---
+
+### 3. Performance Bar Charts
+
+![Performance Bars](https://raw.githubusercontent.com/ubaidur404786/cleaning-robot-rl/main/plots/comparison_bars.png)
+
+**What this shows:**
+Six bar-chart panels, each measuring one metric across the three algorithms. Winner badges (🥇) highlight which algorithm leads in each category using the **last 100 episodes**.
+
+| Metric                | What It Measures                                       | Typical Winner         |
+| --------------------- | ------------------------------------------------------ | ---------------------- |
+| **Average Reward**    | Mean episode reward over last 100 episodes             | **SARSA**              |
+| **Tiles Cleaned**     | Average tiles cleaned per episode                      | **Tie (all at 23.00)** |
+| **Success Rate**      | % of episodes where all 23 tiles cleaned               | **Tie (all at 100%)**  |
+| **Steps to Complete** | Average steps per successful episode (lower is better) | **SARSA**              |
+| **Reward Stability**  | Lower reward standard deviation is better              | **SARSA**              |
+| **Training Time**     | Wall-clock seconds to complete training                | **SARSA**              |
+
+**Comments on this plot:**
+
+- This figure makes one thing very clear: **the winner is decided by efficiency and stability, not by completion**, because all three already complete the cleaning task perfectly.
+- **SARSA dominates the practical metrics**: best reward, best stability, fewest steps, and even the fastest wall-clock training time in the latest run.
+- **Q-Learning is no longer the fastest overall** in this run; it trains quickly, but SARSA finished even faster (**6.97 s vs 10.12 s**) while also producing better behavior.
+- **DQN is massively more expensive computationally** here (**468.88 s**) for only a tiny reward gap versus SARSA. That is the clearest sign that this problem is too small to justify deep RL from a compute-efficiency perspective.
+
+---
+
+### 4. Smart Analysis Radar
+
+![Smart Analysis](https://raw.githubusercontent.com/ubaidur404786/cleaning-robot-rl/main/plots/comparison_smart_analysis.png)
+
+**What this shows:**
+A 4-panel figure with deeper analysis:
+
+- **Top-left — Convergence Speed:** the current run shows an extremely tight race. **DQN reaches 90% success first at episode 106**, SARSA at **107**, and Q-Learning at **110**. So if you only care about the first moment the agent becomes competent, DQN has a microscopic edge.
+- **Top-right — Reward Stability Over Time:** SARSA should have the lowest late-stage reward volatility, matching its final **$\sigma = 6.29$**, versus DQN's **9.30** and Q-Learning's **49.80**. This is where SARSA separates itself from the others.
+- **Bottom-left — Training Efficiency:** this panel exposes the real compute story. SARSA delivers **145.58 reward/second**, Q-Learning **97.22**, and DQN only **2.16**. In other words, DQN is effective but wildly inefficient for such a compact state space.
+- **Bottom-right — Radar / Spider Chart:** SARSA should cover the broadest, most balanced area because it is simultaneously strong in reward, steps, stability, and compute efficiency. DQN scores well on convergence and final reward, but its compute cost drags the polygon inward.
+
+**Comments on this plot:**
+
+- This figure is the best summary of the whole experiment because it separates **"learns fast"** from **"finishes best"** from **"uses compute wisely."**
+- DQN deserves credit: it is not bad here at all — it actually becomes successful slightly earlier than the others.
+- But SARSA is the better engineering choice for this project because it gives nearly optimal paths and top rewards **without** the enormous training-time penalty of DQN.
+- Q-Learning remains a solid baseline, but its reward variance makes it the least polished final policy in the current run.
+
+---
+
+### 🏆 Why SARSA Wins This Case
+
+On the latest 2000-episode run, **SARSA is the best final overall algorithm** for this environment for one core reason:
+
+> **SARSA is on-policy — it learns the value of the policy it actually executes, including exploration noise. In an environment full of wall penalties and room boundaries, this makes it inherently more conservative and better adapted to the actual training dynamics.**
+
+The precise mechanism:
+
+1. **Wall penalties are frequent during exploration.** Early in training, the agent frequently bumps walls (ε is high). Under Q-Learning, wall-adjacent states are still valued optimistically (it assumes the next move will be perfect). Under SARSA, the wall penalty propagates into the Q-value of wall-adjacent states, because the actual ε-greedy policy sometimes walks into walls from there.
+
+2. **The robot learns safer room entry/exit strategies.** Because SARSA discounts states near risky transitions, it naturally learns to approach room doorways (the two hallway tunnel tiles at (2,4) and (3,4)) from the centre rather than hugging walls — leading to smoother navigation.
+
+3. **Higher stability after convergence.** Once SARSA's conservative policy has settled, it rarely deviates from the learned path. That is exactly what appears in the latest metrics: **1014.70 average reward with only 6.29 standard deviation**, compared with Q-Learning's much noisier **49.80**.
+
+4. **Reward signal is dense.** The cleaning reward structure (+50/+35/+20 per tile, −5 for revisits, −0.1 per step) provides rich feedback. SARSA exploits this dense signal more reliably because on-policy updates keep Q-values calibrated to actual experience.
+
+**In short:** the DNUT compass hint + dense rewards + small state space make this an ideal "cautious navigation" problem — exactly SARSA's domain. DQN learns it too, and even hits 90% success a touch earlier, but SARSA gives the **best final balance** of path quality, reward quality, and compute cost.
+
+---
+
+### 🔮 When Others Will Outperform
+
+| Algorithm      | Will Win When...                                                                                                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Q-Learning** | The environment has no dangerous boundary states; you need the fastest convergence; reward is sparse and you need aggressive optimistic exploration to ever find it                                    |
+| **DQN**        | State space grows beyond ~100,000 states; tiles or rooms increase significantly; raw sensor readings replace discrete state IDs; you need the agent to generalise to novel configurations at test time |
+| **SARSA**      | (This case) — small state space, dense rewards, wall/cliff penalties near agent paths, training and deployment policy are the same                                                                     |
+
+Q-Learning would likely win on a **cliff-walking task with no intermediate penalties** (it finds the shortest path); DQN would be necessary if the house were scaled to a **20×20 grid** with pixel rendering.
+
+---
+
+## 📚 Key Concepts
+
+| Term                  | Meaning                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| **Agent**             | The robot (learner that takes actions)                                                      |
+| **Environment**       | The house grid (everything outside the agent)                                               |
+| **State**             | A snapshot of the current situation (position + dirt + DNUT)                                |
+| **Action**            | Something the agent can do (move, clean, wait)                                              |
+| **Reward**            | Feedback signal — positive = good, negative = bad                                           |
+| **Episode**           | One complete run (start → all clean or time-out)                                            |
+| **Policy**            | The agent's strategy (what action to take in each state)                                    |
+| **Q-value**           | Expected total future reward for taking an action in a state                                |
+| **Epsilon (ε)**       | Probability of taking a random action (exploration rate)                                    |
+| **Off-policy**        | Learns optimal behavior regardless of what actions are actually taken                       |
+| **On-policy**         | Learns the value of the behavior it actually follows                                        |
+| **TD Learning**       | Temporal Difference — update estimates from other estimates without waiting for episode end |
+| **Experience Replay** | Store past transitions and train on random samples (DQN)                                    |
+| **Target Network**    | Frozen copy of Q-network used for stable DQN updates                                        |
+| **Discount γ**        | How much future rewards are worth compared to immediate ones                                |
+
+---
+
+## 📎 References
+
+The following resources were referenced and consulted while building this project:
+
+1. **Q-Learning — Beginner's Guide with GridWorld**
+   [A Beginner's Guide to Q-Learning: Understanding with a Simple Gridworld Example](https://medium.com/@goldengrisha/a-beginners-guide-to-q-learning-understanding-with-a-simple-gridworld-example-2b6736e7e2c9) — _Golden Grisha, Medium_
+
+2. **SARSA — Temporal Difference Learning Explained**
+   [SARSA: A Beginner's Guide to Temporal Difference Learning](https://shivang-ahd.medium.com/sarsa-a-beginners-guide-to-temporal-difference-learning-3d72b1011fd8) — _Shivang, Medium_
+
+3. **SARSA — GeeksForGeeks Overview**
+   [SARSA Reinforcement Learning](https://www.geeksforgeeks.org/machine-learning/sarsa-reinforcement-learning/) — _GeeksForGeeks_
+
+4. **DQN — Deep Q-Learning Beginner's Guide**
+   [What is DQN? A Beginner's Guide to Deep Q-Learning](https://ujangriswanto08.medium.com/what-is-dqn-a-beginners-guide-to-deep-q-learning-db99bf4de688) — _Ujang Riswanto, Medium_
+
+5. **Gymnasium Documentation**
+   [gymnasium.farama.org](https://gymnasium.farama.org) — Official RL environment framework
+
+6. **PyTorch Documentation**
+   [pytorch.org](https://pytorch.org) — Neural network implementation for DQN
+
+> **Note:** Parts of the code in this project were generated with the assistance of AI tools (**partially vibe coded**). All logic, hyperparameters, and algorithm structures were verified, understood, and intentionally applied.
 
 ---
 
 <p align="center">
-  <b>Built with ❤️ for learning Reinforcement Learning</b><br>
+  <b>Built for the Master 2 Reinforcement Learning course — Université Côte d'Azur, 2025-2026</b><br>
   <i>From random chaos to optimal cleaning — one episode at a time</i>
 </p>
